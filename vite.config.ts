@@ -45,6 +45,7 @@ function dshProductionBridge(): Plugin {
 }
 
 export default defineConfig({
+  base: './',
   plugins: [vue(), tailwindcss(), dshProductionBridge()],
   server: {
     watch: {
