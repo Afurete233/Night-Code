@@ -1,0 +1,5 @@
+- insert:
+    - id: dsh-music-production
+      name: '@local/dsh-music-production'
+      config:
+        projectUrl: 'http://127.0.0.1:5173'

@@ -3,10 +3,12 @@ import { ref } from 'vue'
 import {
   Dices,
   Download,
+  FileDown,
   FolderUp,
   PanelLeftClose,
   PanelLeftOpen,
   Redo2,
+  RotateCcw,
   Sparkles,
   Undo2,
   Wand2,
@@ -49,7 +51,7 @@ function onImportJSON(e: Event) {
         <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-400 to-indigo-600 shadow-lg shadow-violet-900/30">
           <Sparkles :size="15" />
         </div>
-        <span class="text-sm font-semibold tracking-tight text-white">Frameflow · JIZURA</span>
+        <span class="text-sm font-semibold tracking-tight text-white">Night-Code · JIZURA</span>
       </div>
 
       <div class="h-5 w-px bg-[#242b35]" />
@@ -78,7 +80,7 @@ function onImportJSON(e: Event) {
 
     <!-- 顶部操作按钮 -->
     <div class="flex items-center gap-2">
-      <!-- 导入工程 JSON -->
+      <!-- 导入与导出工程 JSON -->
       <input
         ref="jsonFileInput"
         type="file"
@@ -88,11 +90,28 @@ function onImportJSON(e: Event) {
       />
       <button
         class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-slate-300 hover:bg-[#1a202a] hover:text-white transition"
-        title="导入项目工程文件 (JSON)"
+        title="导入项目工程文件 (.json)"
         @click="jsonFileInput?.click"
       >
         <FolderUp :size="14" />
         <span>打开工程</span>
+      </button>
+
+      <button
+        class="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-slate-300 hover:bg-[#1a202a] hover:text-white transition"
+        title="导出保存项目工程文件 (.json)"
+        @click="editor.downloadProjectFile"
+      >
+        <FileDown :size="14" />
+        <span>保存工程</span>
+      </button>
+
+      <button
+        class="icon-button"
+        title="重置面板布局尺寸"
+        @click="editor.resetLayoutSettings"
+      >
+        <RotateCcw :size="14" />
       </button>
 
       <div class="h-4 w-px bg-[#242b35] mx-1" />

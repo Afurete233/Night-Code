@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { audioEngine } from '../engine/audio'
 import type { AnimatableProperty, BackgroundConfig, BackgroundType, EasingType, Keyframe, Layer, LayerKind, TextAnimPreset } from '../engine/types'
@@ -7,6 +7,43 @@ import { getJizuraStyle, JIZURA_STYLES } from '../engine/jizura/styles'
 import type { ParsedLyricLine } from '../engine/jizura/lyrics'
 
 export type { AnimatableProperty, EasingType, Keyframe, Layer, LayerKind, TextAnimPreset }
+
+const LAYOUT_STORAGE_KEY = 'frameflow_layout_v1'
+const PROJECT_STORAGE_KEY = 'frameflow_project_v1'
+
+function getInitialLayoutSettings() {
+  try {
+    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return {
+        leftWidth: typeof parsed.leftWidth === 'number' ? parsed.leftWidth : 248,
+        rightWidth: typeof parsed.rightWidth === 'number' ? parsed.rightWidth : 280,
+        presetDrawerWidth: typeof parsed.presetDrawerWidth === 'number' ? parsed.presetDrawerWidth : 420,
+        bottomHeight: typeof parsed.bottomHeight === 'number' ? parsed.bottomHeight : 280,
+        isLeftPanelCollapsed: typeof parsed.isLeftPanelCollapsed === 'boolean' ? parsed.isLeftPanelCollapsed : false,
+        activePresetDrawerCategory:
+          parsed.activePresetDrawerCategory === 'standard-anim'
+            ? null
+            : typeof parsed.activePresetDrawerCategory === 'string' || parsed.activePresetDrawerCategory === null
+              ? parsed.activePresetDrawerCategory
+              : null,
+        zoom: typeof parsed.zoom === 'number' ? parsed.zoom : 80,
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load layout settings from localStorage', e)
+  }
+  return {
+    leftWidth: 248,
+    rightWidth: 280,
+    presetDrawerWidth: 420,
+    bottomHeight: 280,
+    isLeftPanelCollapsed: false,
+    activePresetDrawerCategory: null,
+    zoom: 80,
+  }
+}
 
 type Snapshot = {
   layers: Layer[]
@@ -21,26 +58,63 @@ const DEFAULT_BG_IMAGE = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 
 export const useEditorStore = defineStore('editor', () => {
+  const initialLayout = getInitialLayoutSettings()
+
   const currentTime = ref(1.2)
   const isPlaying = ref(false)
   const selectedLayerId = ref('title')
   const selectedLayerIds = ref<string[]>(['title'])
   const selectedKeyframeId = ref<string | null>('k1')
-  const isLeftPanelCollapsed = ref(false)
+  const isLeftPanelCollapsed = ref(initialLayout.isLeftPanelCollapsed)
   const duration = ref(10)
-  const zoom = ref(80)
+  const zoom = ref(initialLayout.zoom)
   const showExportModal = ref(false)
   const showLyricModal = ref(false)
   const showJizuraExplorerModal = ref(false)
-  const activePresetDrawerCategory = ref<string | null>(null)
+  const activePresetDrawerCategory = ref<string | null>(initialLayout.activePresetDrawerCategory)
+  const continuousLyricTransition = ref<boolean>(true)
   const activeJizuraStyleId = ref<string>('noir')
   const backgroundConfig = ref<BackgroundConfig>(getDefaultBackgroundConfig('cyber-grid'))
 
-  // 布局尺寸状态 (弹性可调节)
-  const leftWidth = ref(248)
-  const rightWidth = ref(280)
-  const presetDrawerWidth = ref(420)
-  const bottomHeight = ref(280)
+  // 布局尺寸状态 (弹性可调节并自动持久化到 localStorage)
+  const leftWidth = ref(initialLayout.leftWidth)
+  const rightWidth = ref(initialLayout.rightWidth)
+  const presetDrawerWidth = ref(initialLayout.presetDrawerWidth)
+  const bottomHeight = ref(initialLayout.bottomHeight)
+
+  // 监听面板布局尺寸与展开分类变化自动保存
+  watch(
+    [leftWidth, rightWidth, presetDrawerWidth, bottomHeight, isLeftPanelCollapsed, activePresetDrawerCategory, zoom],
+    () => {
+      try {
+        localStorage.setItem(
+          LAYOUT_STORAGE_KEY,
+          JSON.stringify({
+            leftWidth: leftWidth.value,
+            rightWidth: rightWidth.value,
+            presetDrawerWidth: presetDrawerWidth.value,
+            bottomHeight: bottomHeight.value,
+            isLeftPanelCollapsed: isLeftPanelCollapsed.value,
+            activePresetDrawerCategory: activePresetDrawerCategory.value,
+            zoom: zoom.value,
+          })
+        )
+      } catch (e) {
+        console.error('Failed to save layout settings to localStorage', e)
+      }
+    },
+    { deep: true }
+  )
+
+  function resetLayoutSettings() {
+    leftWidth.value = 248
+    rightWidth.value = 280
+    presetDrawerWidth.value = 420
+    bottomHeight.value = 280
+    isLeftPanelCollapsed.value = false
+    activePresetDrawerCategory.value = null
+    zoom.value = 80
+  }
 
   // 初始图层，包含真实关键帧与文字动画
   const layers = ref<Layer[]>([
@@ -55,6 +129,10 @@ export const useEditorStore = defineStore('editor', () => {
       locked: false,
       x: 960,
       y: 480,
+      width: 600,
+      height: 90,
+      naturalWidth: 600,
+      naturalHeight: 90,
       scale: 100,
       opacity: 100,
       rotation: 0,
@@ -62,6 +140,15 @@ export const useEditorStore = defineStore('editor', () => {
       fontSize: 58,
       fontColor: '#ffffff',
       textPreset: 'pop-in',
+      useJizura: true,
+      layoutAnim: 'center',
+      enterAnim: 'pop',
+      holdAnim: 'breathe',
+      exitAnim: 'fall',
+      decorAnim: 'rings',
+      treatAnim: 'glow',
+      treatmentColor: '#8b5cf6',
+      treatmentColorB: '#ec4899',
       keyframes: [
         { id: 'k1', time: 0, property: 'y', value: 380, easing: 'bounceOut' },
         { id: 'k2', time: 1.2, property: 'y', value: 480, easing: 'easeInOut' },
@@ -80,6 +167,10 @@ export const useEditorStore = defineStore('editor', () => {
       locked: false,
       x: 960,
       y: 590,
+      width: 480,
+      height: 50,
+      naturalWidth: 480,
+      naturalHeight: 50,
       scale: 100,
       opacity: 100,
       rotation: 0,
@@ -87,6 +178,13 @@ export const useEditorStore = defineStore('editor', () => {
       fontSize: 22,
       fontColor: '#94a3b8',
       textPreset: 'typewriter',
+      useJizura: true,
+      layoutAnim: 'center',
+      enterAnim: 'type',
+      holdAnim: 'still',
+      exitAnim: 'fade-up',
+      decorAnim: 'none',
+      treatAnim: 'none',
       keyframes: [],
     },
     {
@@ -100,6 +198,10 @@ export const useEditorStore = defineStore('editor', () => {
       locked: false,
       x: 960,
       y: 540,
+      width: 960,
+      height: 540,
+      naturalWidth: 960,
+      naturalHeight: 540,
       scale: 100,
       opacity: 90,
       rotation: 0,
@@ -120,6 +222,8 @@ export const useEditorStore = defineStore('editor', () => {
       locked: false,
       x: 0,
       y: 0,
+      width: 0,
+      height: 0,
       scale: 100,
       opacity: 100,
       rotation: 0,
@@ -213,7 +317,10 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   function updateSelected(patch: Partial<Layer>) {
-    const targets = selectedLayers.value.filter((l) => !l.locked)
+    let targets = selectedLayers.value.filter((l) => !l.locked)
+    if (targets.length === 0 && selectedLayer.value && !selectedLayer.value.locked) {
+      targets = [selectedLayer.value]
+    }
     if (targets.length === 0) return
     commit()
     for (const target of targets) {
@@ -273,7 +380,13 @@ export const useEditorStore = defineStore('editor', () => {
       locked: false,
       x: 960,
       y: 540,
+      width: 600,
+      height: 90,
+      naturalWidth: 600,
+      naturalHeight: 90,
       scale: 100,
+      scaleX: 100,
+      scaleY: 100,
       opacity: 100,
       rotation: 0,
       text: '创意线性动画',
@@ -294,6 +407,7 @@ export const useEditorStore = defineStore('editor', () => {
       keyframes: [],
     })
     selectedLayerId.value = id
+    selectedLayerIds.value = [id]
   }
 
   function addShapeLayer(color = '#6366f1') {
@@ -307,6 +421,10 @@ export const useEditorStore = defineStore('editor', () => {
       blockColor: color,
       blockWidth: 400,
       blockHeight: 280,
+      width: 400,
+      height: 280,
+      naturalWidth: 400,
+      naturalHeight: 280,
       borderRadius: 0, // 默认纯直角色块
       scale: 100,
       scaleX: 100,
@@ -327,6 +445,7 @@ export const useEditorStore = defineStore('editor', () => {
     }
     layers.value.unshift(newLayer)
     selectedLayerId.value = id
+    selectedLayerIds.value = [id]
   }
 
   function addBackgroundLayer(bgType: BackgroundType = 'dotGrid', colorA?: string, colorB?: string, colorC?: string) {
@@ -342,6 +461,10 @@ export const useEditorStore = defineStore('editor', () => {
       colorA: colorA || preset.defaultColorA,
       colorB: colorB || preset.defaultColorB,
       colorC: colorC || preset.defaultColorC,
+      width: 1920,
+      height: 1080,
+      naturalWidth: 1920,
+      naturalHeight: 1080,
       gridDensity: 60,
       scanlineOpacity: 30,
       scale: 100,
@@ -363,6 +486,7 @@ export const useEditorStore = defineStore('editor', () => {
     }
     layers.value.push(newLayer)
     selectedLayerId.value = id
+    selectedLayerIds.value = [id]
   }
 
   function addAssetLayer(file: File, initialPos?: { x: number; y: number }) {
@@ -382,6 +506,10 @@ export const useEditorStore = defineStore('editor', () => {
       locked: false,
       x: initialPos ? initialPos.x : 960,
       y: initialPos ? initialPos.y : 540,
+      width: 600,
+      height: 400,
+      naturalWidth: 600,
+      naturalHeight: 400,
       scale: 100,
       opacity: 100,
       rotation: 0,
@@ -408,8 +536,22 @@ export const useEditorStore = defineStore('editor', () => {
       reader.onload = (e) => {
         const dataUrl = e.target?.result as string
         if (dataUrl) {
-          newLayer.assetUrl = dataUrl
-          updateLayer(newLayer.id, { assetUrl: dataUrl })
+          const img = new Image()
+          img.onload = () => {
+            const nw = img.naturalWidth || 600
+            const nh = img.naturalHeight || 400
+            updateLayer(newLayer.id, {
+              assetUrl: dataUrl,
+              naturalWidth: nw,
+              naturalHeight: nh,
+              width: nw,
+              height: nh,
+              scale: 100,
+              scaleX: 100,
+              scaleY: 100,
+            })
+          }
+          img.src = dataUrl
         }
       }
       reader.readAsDataURL(file)
@@ -417,6 +559,7 @@ export const useEditorStore = defineStore('editor', () => {
 
     layers.value.unshift(newLayer)
     selectedLayerId.value = id
+    selectedLayerIds.value = [id]
   }
 
   function beginInteraction() {
@@ -465,7 +608,7 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  // 画布快速拖拽缩放 (支持独立 scaleX, scaleY)
+  // 画布快速拖拽缩放 (支持独立 scaleX, scaleY，并实时同步更新实际 width 与 height)
   function dragUpdateScale(
     layerId: string,
     newScale: number,
@@ -477,6 +620,8 @@ export const useEditorStore = defineStore('editor', () => {
 
     const clampedScale = Math.max(10, Math.min(500, Math.round(newScale)))
     const relTime = currentTime.value - layer.start
+    const nw = layer.naturalWidth || layer.width || (layer.kind === 'shape' ? layer.blockWidth || 400 : layer.kind === 'text' ? 600 : 600)
+    const nh = layer.naturalHeight || layer.height || (layer.kind === 'shape' ? layer.blockHeight || 280 : layer.kind === 'text' ? 90 : 400)
 
     if (newScaleX !== undefined && newScaleY !== undefined) {
       const clampedX = Math.max(10, Math.min(500, Math.round(newScaleX)))
@@ -484,6 +629,12 @@ export const useEditorStore = defineStore('editor', () => {
       layer.scaleX = clampedX
       layer.scaleY = clampedY
       layer.scale = clampedScale
+      layer.width = Math.round(nw * (clampedX / 100))
+      layer.height = Math.round(nh * (clampedY / 100))
+      if (layer.kind === 'shape') {
+        layer.blockWidth = layer.width
+        layer.blockHeight = layer.height
+      }
 
       const kfX = layer.keyframes.filter((k) => k.property === 'scaleX').sort((a, b) => a.time - b.time)
       if (kfX.length > 0) {
@@ -516,6 +667,12 @@ export const useEditorStore = defineStore('editor', () => {
       layer.scale = clampedScale
       if (layer.scaleX !== undefined) layer.scaleX = clampedScale
       if (layer.scaleY !== undefined) layer.scaleY = clampedScale
+      layer.width = Math.round(nw * (clampedScale / 100))
+      layer.height = Math.round(nh * (clampedScale / 100))
+      if (layer.kind === 'shape') {
+        layer.blockWidth = layer.width
+        layer.blockHeight = layer.height
+      }
 
       const scaleKeyframes = layer.keyframes.filter((k) => k.property === 'scale').sort((a, b) => a.time - b.time)
       if (scaleKeyframes.length > 0) {
@@ -670,12 +827,66 @@ export const useEditorStore = defineStore('editor', () => {
     syncAudio()
   }
 
+  function autoSaveProject() {
+    try {
+      const data = {
+        version: '1.0.0',
+        savedAt: new Date().toISOString(),
+        duration: duration.value,
+        backgroundConfig: backgroundConfig.value,
+        activeJizuraStyleId: activeJizuraStyleId.value,
+        layers: layers.value,
+      }
+      localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(data))
+    } catch (e) {
+      console.error('Failed to auto-save project', e)
+    }
+  }
+
+  function loadAutoSavedProject(): boolean {
+    try {
+      const raw = localStorage.getItem(PROJECT_STORAGE_KEY)
+      if (!raw) return false
+      const data = JSON.parse(raw)
+      const proj = data.project || data
+      if (Array.isArray(proj.layers) && proj.layers.length > 0) {
+        layers.value = proj.layers
+        if (typeof proj.duration === 'number') duration.value = proj.duration
+        if (proj.backgroundConfig) backgroundConfig.value = proj.backgroundConfig
+        if (proj.activeJizuraStyleId) activeJizuraStyleId.value = proj.activeJizuraStyleId
+        if (layers.value.length > 0) {
+          selectedLayerId.value = layers.value[0].id
+          selectedLayerIds.value = [layers.value[0].id]
+        }
+        return true
+      }
+    } catch (e) {
+      console.error('Failed to load auto-saved project', e)
+    }
+    return false
+  }
+
+  // 尝试加载上一次自动保存的工程状态
+  loadAutoSavedProject()
+
+  // 监听工程核心状态变化自动持久化
+  watch(
+    [layers, duration, backgroundConfig, activeJizuraStyleId],
+    () => {
+      autoSaveProject()
+    },
+    { deep: true }
+  )
+
   function exportProjectJSON() {
     return JSON.stringify(
       {
         version: '1.0.0',
-        project: 'Frameflow Motion Design',
+        app: 'Night-Code Motion Design',
+        exportedAt: new Date().toISOString(),
         duration: duration.value,
+        backgroundConfig: backgroundConfig.value,
+        activeJizuraStyleId: activeJizuraStyleId.value,
         layers: layers.value,
       },
       null,
@@ -683,20 +894,155 @@ export const useEditorStore = defineStore('editor', () => {
     )
   }
 
-  function importProjectJSON(jsonText: string) {
+  function downloadProjectFile() {
+    const jsonStr = exportProjectJSON()
+    const blob = new Blob([jsonStr], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `night-code-project-${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function importProjectJSON(jsonText: string): boolean {
     try {
       const data = JSON.parse(jsonText)
-      if (Array.isArray(data.layers)) {
+      const proj = data.project || data
+      if (Array.isArray(proj.layers) && proj.layers.length > 0) {
         commit()
-        layers.value = data.layers
-        if (data.duration) duration.value = data.duration
+        layers.value = proj.layers
+        if (typeof proj.duration === 'number') duration.value = proj.duration
+        if (proj.backgroundConfig) backgroundConfig.value = proj.backgroundConfig
+        if (proj.activeJizuraStyleId) activeJizuraStyleId.value = proj.activeJizuraStyleId
         currentTime.value = 0
         if (layers.value.length > 0) {
           selectedLayerId.value = layers.value[0].id
+          selectedLayerIds.value = [layers.value[0].id]
         }
+        autoSaveProject()
+        return true
       }
     } catch (e) {
       console.error('Failed to parse project JSON', e)
+    }
+    return false
+  }
+
+  function resetProjectToDefault() {
+    localStorage.removeItem(PROJECT_STORAGE_KEY)
+    window.location.reload()
+  }
+
+  // 剪贴板图层存储
+  const layerClipboard = ref<Layer[] | null>(null)
+
+  function copySelectedLayers() {
+    const targets = selectedLayers.value
+    if (targets.length === 0) return
+    layerClipboard.value = clone(targets)
+  }
+
+  function pasteLayers() {
+    if (!layerClipboard.value || layerClipboard.value.length === 0) return
+    commit()
+    const pastedIds: string[] = []
+    const pasteTime = Number(currentTime.value.toFixed(2))
+
+    const newLayers: Layer[] = layerClipboard.value.map((src) => {
+      const newId = `layer_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      pastedIds.push(newId)
+      return {
+        ...clone(src),
+        id: newId,
+        name: `${src.name} (副本)`,
+        start: pasteTime,
+        keyframes: (src.keyframes || []).map((kf) => ({
+          ...kf,
+          id: `kf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        })),
+      }
+    })
+
+    layers.value.unshift(...newLayers)
+    selectedLayerId.value = pastedIds[0]
+    selectedLayerIds.value = pastedIds
+  }
+
+  function duplicateSelectedLayers() {
+    copySelectedLayers()
+    pasteLayers()
+  }
+
+  // 图层切割/剪切 (Split layer at current playhead time)
+  function splitLayerAtCurrentTime(targetLayerId?: string) {
+    const cutTime = Number(currentTime.value.toFixed(2))
+
+    let targetsToSplit: Layer[] = []
+    if (targetLayerId) {
+      const l = layers.value.find((item) => item.id === targetLayerId)
+      if (l) targetsToSplit = [l]
+    } else if (selectedLayers.value.length > 0) {
+      targetsToSplit = selectedLayers.value
+    } else {
+      targetsToSplit = layers.value.filter(
+        (l) => cutTime > l.start + 0.1 && cutTime < l.start + l.duration - 0.1
+      )
+    }
+
+    let hasSplitAny = false
+    const newSelectedIds: string[] = []
+
+    for (const target of targetsToSplit) {
+      if (target.locked) continue
+      if (cutTime <= target.start + 0.1 || cutTime >= target.start + target.duration - 0.1) {
+        continue
+      }
+
+      if (!hasSplitAny) {
+        commit()
+        hasSplitAny = true
+      }
+
+      const leftDuration = Number((cutTime - target.start).toFixed(2))
+      const rightStart = cutTime
+      const rightDuration = Number((target.start + target.duration - cutTime).toFixed(2))
+
+      const originalKfs = target.keyframes || []
+      const leftKeyframes = originalKfs.filter((kf) => kf.time <= leftDuration)
+      const rightKeyframes = originalKfs
+        .filter((kf) => kf.time > leftDuration)
+        .map((kf) => ({
+          ...kf,
+          id: `kf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          time: Number((kf.time - leftDuration).toFixed(2)),
+        }))
+
+      target.duration = leftDuration
+      target.keyframes = leftKeyframes
+
+      const rightLayerId = `layer_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      const rightLayer: Layer = {
+        ...clone(target),
+        id: rightLayerId,
+        name: `${target.name} (后半段)`,
+        start: rightStart,
+        duration: rightDuration,
+        keyframes: rightKeyframes,
+      }
+
+      const index = layers.value.findIndex((l) => l.id === target.id)
+      if (index !== -1) {
+        layers.value.splice(index + 1, 0, rightLayer)
+      } else {
+        layers.value.unshift(rightLayer)
+      }
+      newSelectedIds.push(rightLayerId)
+    }
+
+    if (newSelectedIds.length > 0) {
+      selectedLayerId.value = newSelectedIds[0]
+      selectedLayerIds.value = newSelectedIds
     }
   }
 
@@ -706,6 +1052,7 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   function applyStyleToLayer(layer: Layer, style: any) {
+    layer.styleId = style.id // 锁定该图层专属的风格主题 ID
     if (layer.kind === 'text') {
       layer.fontColor = style.scheme.fg
       layer.color = style.scheme.accent
@@ -734,10 +1081,10 @@ export const useEditorStore = defineStore('editor', () => {
     const style = getJizuraStyle(styleId)
     if (!style) return
     commit()
-    activeJizuraStyleId.value = styleId
 
-    // 如果指定 applyToAll 或没有选中图层，才更新全局画板底色和全部图层
-    if (applyToAll || !selectedLayer.value) {
+    // 只有在明确指定 applyToAll 为 true 时才全局替换画板底色和全部图层
+    if (applyToAll) {
+      activeJizuraStyleId.value = styleId
       backgroundConfig.value = {
         ...getDefaultBackgroundConfig(style.backgroundType),
         colorA: style.scheme.bg,
@@ -750,13 +1097,16 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    // 默认行为：替换当前所有已选中的图层！
-    if (selectedLayers.value.length > 0) {
-      for (const layer of selectedLayers.value) {
+    // 默认行为：只替换当前选中的一个或多个图层！
+    let targets = selectedLayers.value.filter((l) => !l.locked)
+    if (targets.length === 0 && selectedLayer.value && !selectedLayer.value.locked) {
+      targets = [selectedLayer.value]
+    }
+
+    if (targets.length > 0) {
+      for (const layer of targets) {
         applyStyleToLayer(layer, style)
       }
-    } else if (selectedLayer.value) {
-      applyStyleToLayer(selectedLayer.value, style)
     }
   }
 
@@ -810,6 +1160,10 @@ export const useEditorStore = defineStore('editor', () => {
 
       const preset = presets[idx % presets.length]
 
+      const fontSize = line.text.length > 15 ? 42 : line.text.length > 8 ? 52 : 64
+      const estWidth = Math.max(240, Math.round(line.text.length * fontSize * 1.1 + 80))
+      const estHeight = Math.round(fontSize * (line.subText ? 2.2 : 1.5) + 30)
+
       newLayers.push({
         id,
         name: `歌词 · ${line.text.slice(0, 10)}`,
@@ -821,12 +1175,16 @@ export const useEditorStore = defineStore('editor', () => {
         locked: false,
         x: 960,
         y: 540,
+        width: estWidth,
+        height: estHeight,
+        naturalWidth: estWidth,
+        naturalHeight: estHeight,
         scale: 100,
         opacity: 100,
         rotation: 0,
         text: line.text,
         subText: line.subText,
-        fontSize: line.text.length > 15 ? 42 : line.text.length > 8 ? 52 : 64,
+        fontSize,
         fontColor: chosenStyle.scheme.fg,
         textPreset: preset as TextAnimPreset,
         animPreset: preset,
@@ -853,6 +1211,10 @@ export const useEditorStore = defineStore('editor', () => {
     activePresetDrawerCategory.value = null
   }
 
+  function toggleContinuousLyricTransition() {
+    continuousLyricTransition.value = !continuousLyricTransition.value
+  }
+
   return {
     currentTime,
     isPlaying,
@@ -866,6 +1228,7 @@ export const useEditorStore = defineStore('editor', () => {
     showLyricModal,
     showJizuraExplorerModal,
     activePresetDrawerCategory,
+    continuousLyricTransition,
     activeJizuraStyleId,
     backgroundConfig,
     leftWidth,
@@ -889,6 +1252,7 @@ export const useEditorStore = defineStore('editor', () => {
     toggleVisibility,
     toggleLock,
     toggleLeftPanel,
+    toggleContinuousLyricTransition,
     deleteLayer,
     reorderLayers,
     addTextLayer,
@@ -912,6 +1276,13 @@ export const useEditorStore = defineStore('editor', () => {
     undo,
     redo,
     exportProjectJSON,
+    downloadProjectFile,
     importProjectJSON,
+    resetProjectToDefault,
+    resetLayoutSettings,
+    copySelectedLayers,
+    pasteLayers,
+    duplicateSelectedLayers,
+    splitLayerAtCurrentTime,
   }
 })

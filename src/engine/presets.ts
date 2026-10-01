@@ -184,6 +184,41 @@ export const JIZURA_COMBO_PRESETS: MgComboPresetDef[] = [
   },
 ]
 
+export function isEnterPreset(id: string): boolean {
+  const enterIds = [
+    'pop', 'pop-in', 'q-bounce', 'jelly-pop', 'jelly-in',
+    'line-bounce', 'squash-line', 'squash-stretch', 'jelly-deform', 'wave-bounce', 'elastic-snap',
+    'riseMask', 'fade-up', 'dropMask', 'drop', 'bounceBig', 'bounce-drop', 'spring-drop',
+    'slideL', 'slideWhole', 'slide-right', 'slideR', 'slide-left', 'slide-down',
+    'whip', 'whip-in', 'slingshot', 'spin', 'spin-in', 'rollIn', 'twister',
+    'flipX', 'flip-x', 'flipY', 'flip-y', 'blur', 'blur-in', 'zoomOut',
+    'rubber', 'rubber-in', 'stretch', 'type', 'typewriter',
+    'scramble', 'glitchIn', 'glitch-in', 'resolve', 'knWordSlam', 'knTypeToSlam',
+    'hrJumpScare', 'hrBlinkCreep'
+  ]
+  return enterIds.includes(id)
+}
+
+export function isHoldPreset(id: string): boolean {
+  const holdIds = [
+    'breathe', 'pulse', 'q-jelly', 'jelly', 'pulse-squeeze', 'float', 'drift',
+    'sway', 'dangle', 'swing', 'jitter', 'glitchtick', 'beatHop', 'beat-hop',
+    'heartbeat', 'rotateSlow', 'rotate-slow', 'glowFlicker', 'shimmer'
+  ]
+  return holdIds.includes(id)
+}
+
+export function isExitPreset(id: string): boolean {
+  const exitIds = [
+    'fall', 'gravity', 'explode', 'popOut', 'scatter', 'shrink', 'collapse',
+    'vacuumOut', 'blur', 'drift', 'slideOutL', 'slide-out-left', 'whipOut',
+    'knPushOut', 'slideOutR', 'slide-out-right', 'knWordKick', 'spinOut',
+    'twist', 'riseOut', 'glitch', 'scrambleOut', 'squash', 'squash-out',
+    'backspace', 'tyStrike', 'hrPulledDown'
+  ]
+  return exitIds.includes(id)
+}
+
 /**
  * ============================================================================
  * JIZURA 动态入场求值器 (Enter Evaluator)
@@ -195,35 +230,106 @@ export function evaluateJizuraEnter(
   enterDuration = 0.6
 ): MgPresetTransformResult {
   const { layerTime, baseTransform, params } = ctx
-  const dur = Number(params.enterDuration) || enterDuration
+  const dur = Number(params.duration) || Number(params.enterDuration) || enterDuration
   if (layerTime >= dur) return {}
 
   const t = Math.max(0, Math.min(1, layerTime / dur))
   const intensity = (Number(params.motionIntensity) ?? 100) / 100
+  const dist = Number(params.distance) ?? 60
 
   switch (enterId) {
     case 'pop':
-    case 'pop-in': {
-      const e = evaluateEasing('backOut', t)
+    case 'pop-in':
+    case 'q-bounce': {
+      const e = evaluateEasing('elasticOut', t)
+      const squash = Math.sin(t * Math.PI * 3) * Math.exp(-t * 4) * 0.25 * intensity
       return {
         scale: baseTransform.scale * e,
-        opacity: Math.min(baseTransform.opacity, baseTransform.opacity * (t * 2.5)),
+        scaleX: baseTransform.scaleX * e * (1 + squash),
+        scaleY: baseTransform.scaleY * e * (1 - squash),
+        opacity: Math.min(baseTransform.opacity, baseTransform.opacity * (t * 3.5)),
+      }
+    }
+    case 'jelly-pop':
+    case 'jelly-in': {
+      const e = evaluateEasing('elasticOut', t)
+      const deform = Math.sin(t * Math.PI * 4) * Math.exp(-t * 3.5) * 0.45 * intensity
+      return {
+        scale: baseTransform.scale * e,
+        scaleX: baseTransform.scaleX * Math.max(0.01, e + deform),
+        scaleY: baseTransform.scaleY * Math.max(0.01, e - deform),
+        opacity: Math.min(baseTransform.opacity, baseTransform.opacity * (t * 4)),
+      }
+    }
+    case 'line-bounce':
+    case 'squash-line': {
+      // 挤压弹线动画：强烈横向拉伸变扁，随后沿弹线高频震荡回弹
+      const e = evaluateEasing('elasticOut', t)
+      const lineWave = Math.sin(t * Math.PI * 4.5) * Math.exp(-t * 3.8) * 0.75 * intensity
+      const bounceY = Math.abs(Math.sin(t * Math.PI * 3)) * (1 - t) * -22 * intensity
+      return {
+        scale: baseTransform.scale * Math.min(1, t * 2.2),
+        scaleX: baseTransform.scaleX * Math.max(0.05, e + lineWave),
+        scaleY: baseTransform.scaleY * Math.max(0.05, e - lineWave * 0.6),
+        y: baseTransform.y + bounceY,
+        opacity: Math.min(baseTransform.opacity, baseTransform.opacity * (t * 4)),
+      }
+    }
+    case 'squash-stretch': {
+      // 弹性挤压拉伸：纵向拉伸到落地挤压扁平，再弹起归位
+      const e = evaluateEasing('elasticOut', t)
+      const stretch = Math.cos(t * Math.PI * 3.5) * Math.exp(-t * 3.5) * 0.65 * intensity
+      return {
+        scale: baseTransform.scale * Math.min(1, t * 2.5),
+        scaleX: baseTransform.scaleX * Math.max(0.05, e - stretch),
+        scaleY: baseTransform.scaleY * Math.max(0.05, e + stretch),
+        opacity: Math.min(baseTransform.opacity, baseTransform.opacity * (t * 4)),
+      }
+    }
+    case 'jelly-deform': {
+      // 果冻波浪变形：高频果冻软体波浪变形
+      const e = evaluateEasing('easeOut', t)
+      const deformX = Math.sin(t * Math.PI * 5) * Math.exp(-t * 3) * 0.5 * intensity
+      const deformY = Math.cos(t * Math.PI * 5) * Math.exp(-t * 3) * 0.5 * intensity
+      return {
+        scaleX: baseTransform.scaleX * Math.max(0.05, e + deformX),
+        scaleY: baseTransform.scaleY * Math.max(0.05, e + deformY),
+        opacity: baseTransform.opacity * e,
+      }
+    }
+    case 'wave-bounce':
+    case 'elastic-snap': {
+      // 波浪弹线甩动：结合旋转倾斜与弹线形变
+      const e = evaluateEasing('elasticOut', t)
+      const rot = Math.sin(t * Math.PI * 4) * Math.exp(-t * 3) * 18 * intensity
+      const wave = Math.sin(t * Math.PI * 4) * Math.exp(-t * 3) * 0.45 * intensity
+      return {
+        rotation: baseTransform.rotation + rot,
+        scaleX: baseTransform.scaleX * Math.max(0.05, e + wave),
+        scaleY: baseTransform.scaleY * Math.max(0.05, e - wave),
+        opacity: baseTransform.opacity * Math.min(1, t * 3.5),
       }
     }
     case 'riseMask':
     case 'fade-up': {
       const e = evaluateEasing('easeOut', t)
       return {
-        y: baseTransform.y + (1 - e) * 60 * intensity,
+        y: baseTransform.y + (1 - e) * dist * intensity,
         opacity: baseTransform.opacity * e,
       }
     }
     case 'dropMask':
     case 'drop':
-    case 'bounceBig': {
+    case 'bounceBig':
+    case 'bounce-drop':
+    case 'spring-drop': {
       const e = evaluateEasing('bounceOut', t)
+      const dropDist = dist * 2.2 * intensity
+      const impactSquash = t > 0.4 ? Math.sin(t * Math.PI * 3) * Math.exp(-t * 3) * 0.25 * intensity : 0
       return {
-        y: baseTransform.y - (1 - e) * 140 * intensity,
+        y: baseTransform.y - (1 - e) * dropDist,
+        scaleX: baseTransform.scaleX * (1 + impactSquash),
+        scaleY: baseTransform.scaleY * (1 - impactSquash),
         opacity: baseTransform.opacity * Math.min(1, t * 3),
       }
     }
@@ -232,38 +338,51 @@ export function evaluateJizuraEnter(
     case 'slide-right': {
       const e = evaluateEasing('easeOut', t)
       return {
-        x: baseTransform.x - (1 - e) * 200 * intensity,
+        x: baseTransform.x - (1 - e) * dist * 3.3 * intensity,
         opacity: baseTransform.opacity * e,
       }
     }
-    case 'slideR': {
+    case 'slideR':
+    case 'slide-left': {
       const e = evaluateEasing('easeOut', t)
       return {
-        x: baseTransform.x + (1 - e) * 200 * intensity,
+        x: baseTransform.x + (1 - e) * dist * 3.3 * intensity,
+        opacity: baseTransform.opacity * e,
+      }
+    }
+    case 'slide-down': {
+      const e = evaluateEasing('easeOut', t)
+      return {
+        y: baseTransform.y - (1 - e) * dist * 3.3 * intensity,
         opacity: baseTransform.opacity * e,
       }
     }
     case 'whip':
+    case 'whip-in':
     case 'slingshot': {
       const e = evaluateEasing('backOut', t)
       return {
-        x: baseTransform.x - (1 - e) * 350 * intensity,
-        scaleX: baseTransform.scaleX * (1 + (1 - t) * 0.8),
+        x: baseTransform.x - (1 - e) * dist * 5 * intensity,
+        scaleX: baseTransform.scaleX * (1 + (1 - t) * 0.8 * intensity),
         opacity: baseTransform.opacity * e,
       }
     }
     case 'spin':
     case 'spin-in':
-    case 'rollIn': {
-      const eS = evaluateEasing('backOut', t)
+    case 'rollIn':
+    case 'twister': {
+      const eS = evaluateEasing('elasticOut', t)
       const eR = evaluateEasing('easeOut', t)
       return {
-        rotation: baseTransform.rotation - (1 - eR) * 180 * intensity,
+        rotation: baseTransform.rotation - (1 - eR) * 360 * intensity,
         scale: baseTransform.scale * eS,
+        scaleX: baseTransform.scaleX * eS,
+        scaleY: baseTransform.scaleY * eS,
         opacity: baseTransform.opacity * Math.min(1, t * 2.5),
       }
     }
-    case 'flipX': {
+    case 'flipX':
+    case 'flip-x': {
       const e = evaluateEasing('backOut', t)
       return {
         scaleX: baseTransform.scaleX * Math.abs(Math.sin((t * Math.PI) / 2)),
@@ -271,7 +390,8 @@ export function evaluateJizuraEnter(
         opacity: baseTransform.opacity * e,
       }
     }
-    case 'flipY': {
+    case 'flipY':
+    case 'flip-y': {
       const e = evaluateEasing('backOut', t)
       return {
         scaleY: baseTransform.scaleY * Math.abs(Math.sin((t * Math.PI) / 2)),
@@ -284,16 +404,19 @@ export function evaluateJizuraEnter(
     case 'zoomOut': {
       const e = evaluateEasing('easeOut', t)
       return {
-        scale: baseTransform.scale * (1.35 - 0.35 * e),
+        scale: baseTransform.scale * (1.5 - 0.5 * e),
+        scaleX: baseTransform.scaleX * (1.5 - 0.5 * e),
+        scaleY: baseTransform.scaleY * (1.5 - 0.5 * e),
         opacity: baseTransform.opacity * e,
       }
     }
     case 'rubber':
+    case 'rubber-in':
     case 'stretch': {
       const e = evaluateEasing('elasticOut', t)
       return {
-        scaleX: baseTransform.scaleX * (1 + (1 - t) * 0.9 * intensity),
-        scaleY: baseTransform.scaleY * (0.4 + 0.6 * e),
+        scaleX: baseTransform.scaleX * (1 + (1 - t) * 1.2 * intensity),
+        scaleY: baseTransform.scaleY * (0.3 + 0.7 * e),
         opacity: baseTransform.opacity * Math.min(1, t * 3),
       }
     }
@@ -312,6 +435,7 @@ export function evaluateJizuraEnter(
     }
     case 'scramble':
     case 'glitchIn':
+    case 'glitch-in':
     case 'resolve': {
       const rndX = (Math.random() - 0.5) * 20 * (1 - t) * intensity
       const rndY = (Math.random() - 0.5) * 10 * (1 - t) * intensity
@@ -327,6 +451,8 @@ export function evaluateJizuraEnter(
       const e = evaluateEasing('bounceOut', t)
       return {
         scale: baseTransform.scale * (2.2 - 1.2 * e),
+        scaleX: baseTransform.scaleX * (2.2 - 1.2 * e),
+        scaleY: baseTransform.scaleY * (2.2 - 1.2 * e),
         opacity: baseTransform.opacity * Math.min(1, t * 4),
       }
     }
@@ -335,6 +461,8 @@ export function evaluateJizuraEnter(
       const blink = Math.floor(layerTime * 8) % 2 === 0 && t < 0.6 ? 0 : 1
       return {
         scale: baseTransform.scale * (t < 0.5 ? 1.4 : 1.0),
+        scaleX: baseTransform.scaleX * (t < 0.5 ? 1.4 : 1.0),
+        scaleY: baseTransform.scaleY * (t < 0.5 ? 1.4 : 1.0),
         opacity: baseTransform.opacity * blink,
       }
     }
@@ -342,7 +470,7 @@ export function evaluateJizuraEnter(
       const e = evaluateEasing('easeOut', t)
       return {
         opacity: baseTransform.opacity * e,
-        y: baseTransform.y + (1 - e) * 30,
+        y: baseTransform.y + (1 - e) * 30 * intensity,
       }
     }
   }
@@ -366,9 +494,22 @@ export function evaluateJizuraHold(
       return {}
     case 'breathe':
     case 'pulse': {
-      const s = 1 + Math.sin(layerTime * 3) * 0.04 * intensity
+      const s = 1 + Math.sin(layerTime * 3) * 0.05 * intensity
       return {
         scale: baseTransform.scale * s,
+        scaleX: baseTransform.scaleX * s,
+        scaleY: baseTransform.scaleY * s,
+      }
+    }
+    case 'q-jelly':
+    case 'jelly': {
+      const sx = 1 + Math.sin(layerTime * 5.5) * 0.08 * intensity
+      const sy = 1 - Math.sin(layerTime * 5.5) * 0.08 * intensity
+      const bounceY = Math.abs(Math.sin(layerTime * 2.8)) * -10 * intensity
+      return {
+        scaleX: baseTransform.scaleX * sx,
+        scaleY: baseTransform.scaleY * sy,
+        y: baseTransform.y + bounceY,
       }
     }
     case 'float':
@@ -383,7 +524,7 @@ export function evaluateJizuraHold(
     case 'sway':
     case 'dangle':
     case 'swing': {
-      const angle = Math.sin(layerTime * 3.5) * 6 * intensity
+      const angle = Math.sin(layerTime * 3.5) * 7 * intensity
       return {
         rotation: baseTransform.rotation + angle,
       }
@@ -400,24 +541,20 @@ export function evaluateJizuraHold(
       return {}
     }
     case 'beatHop':
+    case 'beat-hop':
     case 'heartbeat': {
-      const beat = Math.pow(Math.sin(layerTime * Math.PI * 2), 6) * 0.08 * intensity
+      const beat = Math.pow(Math.sin(layerTime * Math.PI * 2), 6) * 0.1 * intensity
       return {
         scale: baseTransform.scale * (1 + beat),
-        y: baseTransform.y - beat * 40,
+        scaleX: baseTransform.scaleX * (1 + beat),
+        scaleY: baseTransform.scaleY * (1 + beat * 1.2),
+        y: baseTransform.y - beat * 35,
       }
     }
-    case 'rotateSlow': {
+    case 'rotateSlow':
+    case 'rotate-slow': {
       return {
-        rotation: baseTransform.rotation + ((layerTime * 15 * intensity) % 360),
-      }
-    }
-    case 'jelly': {
-      const sx = 1 + Math.sin(layerTime * 5) * 0.06 * intensity
-      const sy = 1 - Math.sin(layerTime * 5) * 0.06 * intensity
-      return {
-        scaleX: baseTransform.scaleX * sx,
-        scaleY: baseTransform.scaleY * sy,
+        rotation: baseTransform.rotation + ((layerTime * 20 * intensity) % 360),
       }
     }
     case 'glowFlicker':
@@ -458,7 +595,7 @@ export function evaluateJizuraExit(
     case 'gravity': {
       const e = evaluateEasing('easeIn', t)
       return {
-        y: baseTransform.y + e * 180 * intensity,
+        y: baseTransform.y + e * 200 * intensity,
         opacity: baseTransform.opacity * (1 - e),
       }
     }
@@ -468,6 +605,8 @@ export function evaluateJizuraExit(
       const e = evaluateEasing('easeOut', t)
       return {
         scale: baseTransform.scale * (1 + e * 0.8 * intensity),
+        scaleX: baseTransform.scaleX * (1 + e * 0.8 * intensity),
+        scaleY: baseTransform.scaleY * (1 + e * 0.8 * intensity),
         opacity: baseTransform.opacity * (1 - e),
       }
     }
@@ -475,8 +614,11 @@ export function evaluateJizuraExit(
     case 'collapse':
     case 'vacuumOut': {
       const e = evaluateEasing('easeIn', t)
+      const s = Math.max(0, 1 - e)
       return {
-        scale: baseTransform.scale * Math.max(0, 1 - e),
+        scale: baseTransform.scale * s,
+        scaleX: baseTransform.scaleX * s,
+        scaleY: baseTransform.scaleY * s,
         opacity: baseTransform.opacity * (1 - e),
       }
     }
@@ -485,39 +627,46 @@ export function evaluateJizuraExit(
       const e = evaluateEasing('easeOut', t)
       return {
         scale: baseTransform.scale * (1 + e * 0.3),
+        scaleX: baseTransform.scaleX * (1 + e * 0.3),
+        scaleY: baseTransform.scaleY * (1 + e * 0.3),
         opacity: baseTransform.opacity * (1 - e),
       }
     }
     case 'slideOutL':
+    case 'slide-out-left':
     case 'whipOut':
     case 'knPushOut': {
       const e = evaluateEasing('easeIn', t)
       return {
-        x: baseTransform.x - e * 300 * intensity,
+        x: baseTransform.x - e * 320 * intensity,
         opacity: baseTransform.opacity * (1 - e),
       }
     }
     case 'slideOutR':
+    case 'slide-out-right':
     case 'knWordKick': {
       const e = evaluateEasing('easeIn', t)
       return {
-        x: baseTransform.x + e * 300 * intensity,
+        x: baseTransform.x + e * 320 * intensity,
         opacity: baseTransform.opacity * (1 - e),
       }
     }
     case 'spinOut':
     case 'twist': {
       const e = evaluateEasing('easeIn', t)
+      const s = Math.max(0, 1 - e)
       return {
-        rotation: baseTransform.rotation + e * 240 * intensity,
-        scale: baseTransform.scale * (1 - e),
+        rotation: baseTransform.rotation + e * 360 * intensity,
+        scale: baseTransform.scale * s,
+        scaleX: baseTransform.scaleX * s,
+        scaleY: baseTransform.scaleY * s,
         opacity: baseTransform.opacity * (1 - e),
       }
     }
     case 'riseOut': {
       const e = evaluateEasing('easeIn', t)
       return {
-        y: baseTransform.y - e * 120 * intensity,
+        y: baseTransform.y - e * 140 * intensity,
         opacity: baseTransform.opacity * (1 - e),
       }
     }
@@ -529,11 +678,12 @@ export function evaluateJizuraExit(
         opacity: Math.random() > t ? baseTransform.opacity * (1 - t) : 0,
       }
     }
-    case 'squash': {
+    case 'squash':
+    case 'squash-out': {
       const e = evaluateEasing('easeIn', t)
       return {
-        scaleY: baseTransform.scaleY * Math.max(0.05, 1 - e),
-        scaleX: baseTransform.scaleX * (1 + e * 0.6),
+        scaleY: baseTransform.scaleY * Math.max(0.02, 1 - e),
+        scaleX: baseTransform.scaleX * (1 + e * 0.8),
         opacity: baseTransform.opacity * (1 - e),
       }
     }
@@ -658,10 +808,22 @@ export function applyMgPreset(
   const combo = JIZURA_COMBO_PRESETS.find((c) => c.id === presetId)
 
   // 确定入场/保持/退场/运镜 ID
-  const enterId = layer.enterAnim || combo?.enter || presetId || 'fade-up'
-  const holdId = layer.holdAnim || combo?.hold || 'breathe'
-  const exitId = layer.exitAnim || combo?.exit || 'fall'
-  const camId = layer.camAnim || ''
+  let enterId = layer.enterAnim || combo?.enter || ''
+  let holdId = layer.holdAnim || combo?.hold || ''
+  let exitId = layer.exitAnim || combo?.exit || ''
+  let camId = layer.camAnim || ''
+
+  if (!combo && presetId && presetId !== 'none') {
+    if (isEnterPreset(presetId)) {
+      if (!enterId) enterId = presetId
+    } else if (isHoldPreset(presetId)) {
+      if (!holdId) holdId = presetId
+    } else if (isExitPreset(presetId)) {
+      if (!exitId) exitId = presetId
+    } else {
+      if (!enterId) enterId = presetId
+    }
+  }
 
   const fullCtx: MgPresetContext = {
     ...ctx,
@@ -678,11 +840,16 @@ export function applyMgPreset(
   let resDisplayed = ctx.baseTransform.displayedText
 
   // 1. 运镜效果 (Camera)
-  if (camId) {
+  if (camId && camId !== 'none') {
     const camRes = evaluateJizuraCamera(camId, fullCtx)
     if (camRes.x !== undefined) resX = camRes.x
     if (camRes.y !== undefined) resY = camRes.y
-    if (camRes.scale !== undefined) resScale = camRes.scale
+    if (camRes.scale !== undefined) {
+      const ratio = resScale ? camRes.scale / resScale : 1
+      resScale = camRes.scale
+      resScaleX *= ratio
+      resScaleY *= ratio
+    }
     if (camRes.rotation !== undefined) resRotation = camRes.rotation
   }
 
@@ -691,7 +858,12 @@ export function applyMgPreset(
     const holdRes = evaluateJizuraHold(holdId, { ...fullCtx, baseTransform: { ...ctx.baseTransform, x: resX, y: resY, scale: resScale, scaleX: resScaleX, scaleY: resScaleY, opacity: resOpacity, rotation: resRotation, displayedText: resDisplayed } })
     if (holdRes.x !== undefined) resX = holdRes.x
     if (holdRes.y !== undefined) resY = holdRes.y
-    if (holdRes.scale !== undefined) resScale = holdRes.scale
+    if (holdRes.scale !== undefined) {
+      const ratio = resScale ? holdRes.scale / resScale : 1
+      resScale = holdRes.scale
+      if (holdRes.scaleX === undefined) resScaleX *= ratio
+      if (holdRes.scaleY === undefined) resScaleY *= ratio
+    }
     if (holdRes.scaleX !== undefined) resScaleX = holdRes.scaleX
     if (holdRes.scaleY !== undefined) resScaleY = holdRes.scaleY
     if (holdRes.opacity !== undefined) resOpacity = holdRes.opacity
@@ -699,12 +871,17 @@ export function applyMgPreset(
   }
 
   // 3. 入场动效 (Enter)
-  const enterDur = Number(params.enterDuration) || 0.6
+  const enterDur = Number(params.duration) || Number(params.enterDuration) || 0.6
   if (ctx.layerTime < enterDur && enterId && enterId !== 'cut' && enterId !== 'none') {
     const enterRes = evaluateJizuraEnter(enterId, { ...fullCtx, baseTransform: { ...ctx.baseTransform, x: resX, y: resY, scale: resScale, scaleX: resScaleX, scaleY: resScaleY, opacity: resOpacity, rotation: resRotation, displayedText: resDisplayed } }, enterDur)
     if (enterRes.x !== undefined) resX = enterRes.x
     if (enterRes.y !== undefined) resY = enterRes.y
-    if (enterRes.scale !== undefined) resScale = enterRes.scale
+    if (enterRes.scale !== undefined) {
+      const ratio = resScale ? enterRes.scale / resScale : 1
+      resScale = enterRes.scale
+      if (enterRes.scaleX === undefined) resScaleX *= ratio
+      if (enterRes.scaleY === undefined) resScaleY *= ratio
+    }
     if (enterRes.scaleX !== undefined) resScaleX = enterRes.scaleX
     if (enterRes.scaleY !== undefined) resScaleY = enterRes.scaleY
     if (enterRes.opacity !== undefined) resOpacity = enterRes.opacity
@@ -719,7 +896,12 @@ export function applyMgPreset(
     const exitRes = evaluateJizuraExit(exitId, { ...fullCtx, baseTransform: { ...ctx.baseTransform, x: resX, y: resY, scale: resScale, scaleX: resScaleX, scaleY: resScaleY, opacity: resOpacity, rotation: resRotation, displayedText: resDisplayed } }, exitDur)
     if (exitRes.x !== undefined) resX = exitRes.x
     if (exitRes.y !== undefined) resY = exitRes.y
-    if (exitRes.scale !== undefined) resScale = exitRes.scale
+    if (exitRes.scale !== undefined) {
+      const ratio = resScale ? exitRes.scale / resScale : 1
+      resScale = exitRes.scale
+      if (exitRes.scaleX === undefined) resScaleX *= ratio
+      if (exitRes.scaleY === undefined) resScaleY *= ratio
+    }
     if (exitRes.scaleX !== undefined) resScaleX = exitRes.scaleX
     if (exitRes.scaleY !== undefined) resScaleY = exitRes.scaleY
     if (exitRes.opacity !== undefined) resOpacity = exitRes.opacity

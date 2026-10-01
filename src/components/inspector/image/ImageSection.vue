@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Image as ImageIcon, RotateCcw, Upload } from '@lucide/vue'
+import { Image as ImageIcon, Link, RotateCcw, Unlink, Upload } from '@lucide/vue'
 import CollapsibleSection from '../common/CollapsibleSection.vue'
+import ScrubInput from '../../ui/ScrubInput.vue'
 import type { Layer } from '../../../engine/types'
 import { useEditorStore } from '../../../stores/editor'
 
-defineProps<{
+const props = defineProps<{
   layer: Layer
 }>()
 
@@ -20,21 +21,68 @@ function onFileSelect(e: Event) {
   reader.onload = (event) => {
     const dataUrl = event.target?.result as string
     if (dataUrl) {
-      editor.updateSelected({
-        assetUrl: dataUrl,
-        name: file.name,
-      })
+      const img = new Image()
+      img.onload = () => {
+        const nw = img.naturalWidth || 600
+        const nh = img.naturalHeight || 400
+        editor.updateSelected({
+          assetUrl: dataUrl,
+          name: file.name,
+          naturalWidth: nw,
+          naturalHeight: nh,
+          width: nw,
+          height: nh,
+          scale: 100,
+          scaleX: 100,
+          scaleY: 100,
+        })
+      }
+      img.src = dataUrl
     }
   }
   reader.readAsDataURL(file)
   ;(e.target as HTMLInputElement).value = ''
 }
 
+function onWidthChange(newW: number) {
+  const nw = props.layer.naturalWidth || props.layer.width || 600
+  const nh = props.layer.naturalHeight || props.layer.height || 400
+  if (props.layer.lockAspectRatio !== false) {
+    const ratio = nh / nw
+    const newH = Math.round(newW * ratio)
+    const scale = Math.round((newW / nw) * 100)
+    editor.updateSelected({ width: newW, height: newH, scale, scaleX: scale, scaleY: scale })
+  } else {
+    const scaleX = Math.round((newW / nw) * 100)
+    editor.updateSelected({ width: newW, scaleX })
+  }
+}
+
+function onHeightChange(newH: number) {
+  const nw = props.layer.naturalWidth || props.layer.width || 600
+  const nh = props.layer.naturalHeight || props.layer.height || 400
+  if (props.layer.lockAspectRatio !== false) {
+    const ratio = nw / nh
+    const newW = Math.round(newH * ratio)
+    const scale = Math.round((newH / nh) * 100)
+    editor.updateSelected({ width: newW, height: newH, scale, scaleX: scale, scaleY: scale })
+  } else {
+    const scaleY = Math.round((newH / nh) * 100)
+    editor.updateSelected({ height: newH, scaleY })
+  }
+}
+
 function resetTransform() {
+  const nw = props.layer.naturalWidth || 600
+  const nh = props.layer.naturalHeight || 400
   editor.updateSelected({
     x: 960,
     y: 540,
+    width: nw,
+    height: nh,
     scale: 100,
+    scaleX: 100,
+    scaleY: 100,
     rotation: 0,
     opacity: 100,
   })
@@ -59,7 +107,9 @@ function resetTransform() {
         <div class="flex min-w-0 flex-1 flex-col justify-between self-stretch py-0.5">
           <div>
             <p class="truncate text-xs font-semibold text-slate-200">{{ layer.name }}</p>
-            <p class="text-[10px] text-slate-500 mt-0.5">自适应画板尺寸</p>
+            <p class="text-[10px] text-slate-500 mt-0.5">
+              原图: {{ layer.naturalWidth || layer.width || 600 }} × {{ layer.naturalHeight || layer.height || 400 }} px
+            </p>
           </div>
 
           <div class="flex items-center gap-1.5 pt-1">
@@ -79,13 +129,50 @@ function resetTransform() {
             </button>
             <button
               class="flex items-center gap-1 rounded bg-[#1c2331] px-2 py-1 text-[10px] font-medium text-slate-300 hover:bg-[#252f42] hover:text-white transition"
-              title="重置到画板中心"
+              title="重置到画板中心原图大小"
               @click="resetTransform"
             >
               <RotateCcw :size="11" />
-              <span>居中</span>
+              <span>居中原大</span>
             </button>
           </div>
+        </div>
+      </div>
+
+      <!-- 尺寸调节 (实际像素与原始分辨率) -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <label class="text-[10px] font-medium text-slate-400">渲染尺寸 (Pixels)</label>
+          <button
+            class="flex items-center gap-1 text-[10px] text-slate-400 hover:text-violet-300 transition"
+            @click="editor.updateSelected({ lockAspectRatio: !(layer.lockAspectRatio !== false) })"
+          >
+            <Link v-if="layer.lockAspectRatio !== false" :size="11" class="text-violet-400" />
+            <Unlink v-else :size="11" class="text-slate-500" />
+            <span>{{ layer.lockAspectRatio !== false ? '锁定等比' : '自由拉伸' }}</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <ScrubInput
+            label="宽度"
+            unit="px"
+            :min="10"
+            :max="3840"
+            :step="5"
+            :model-value="layer.width || layer.naturalWidth || 600"
+            @update:model-value="onWidthChange"
+          />
+
+          <ScrubInput
+            label="高度"
+            unit="px"
+            :min="10"
+            :max="2160"
+            :step="5"
+            :model-value="layer.height || layer.naturalHeight || 400"
+            @update:model-value="onHeightChange"
+          />
         </div>
       </div>
     </div>

@@ -10,7 +10,7 @@ import {
   RotateCcw,
 } from '@lucide/vue'
 import { computeLayerTransform } from '../engine/animation'
-import { drawJizuraBackground, compileJizuraLayerPlan, renderJizuraFrame } from '../engine/jizura/renderer'
+import { drawJizuraBackground, compileJizuraLayerPlan, compileContinuousLyricPlan, renderJizuraFrame } from '../engine/jizura/renderer'
 import { getJizuraStyle, JIZURA_STYLES } from '../engine/jizura/styles'
 import { useEditorStore } from '../stores/editor'
 
@@ -127,6 +127,12 @@ function updateViewportTransform() {
   const hostHeight = canvasHost.value.clientHeight
   if (hostWidth === 0 || hostHeight === 0) return
 
+  try {
+    pixiApp.renderer.resize(hostWidth, hostHeight)
+  } catch {
+    // fallback if renderer is not ready
+  }
+
   const padding = 40
   const scale = Math.min((hostWidth - padding) / STAGE_WIDTH, (hostHeight - padding) / STAGE_HEIGHT)
   viewport.scale.set(scale)
@@ -134,6 +140,8 @@ function updateViewportTransform() {
     (hostWidth - STAGE_WIDTH * scale) / 2,
     (hostHeight - STAGE_HEIGHT * scale) / 2
   )
+
+  renderScene()
 }
 
 function stagePointFromClient(clientX: number, clientY: number) {
@@ -160,31 +168,84 @@ function getLayerBoundsInStage(layerId: string) {
   const sy = (tr.scaleY || tr.scale) / 100
 
   if (layer.kind === 'text') {
-    const cached = layerNodesMap.get(layer.id)
-    if (cached?.textNode && cached.textNode.width > 0) {
-      w = cached.textNode.width * sx
-      h = cached.textNode.height * sy
+    const textLen = Math.max(1, (layer.text || ' ').length)
+    const fontSize = layer.fontSize || 48
+    const isJizura = layer.useJizura !== false
+    const layout = layer.layoutAnim || layer.textLayout || 'center'
+
+    if (isJizura) {
+      // JIZURA 动态文字排版高宽：根据 JIZURA 186 种版式结构计算准确高宽
+      if (layout === 'vcols') {
+        // 竖排排版：宽度窄、高度随字符纵向延展
+        w = Math.round((fontSize * 1.8 + 60) * sx)
+        h = Math.round((textLen * fontSize * 1.1 + 80) * sy)
+      } else if (layout === 'huge' || layout === 'tyCropGiant') {
+        // 出框巨字排版：高冲击宽画幅
+        w = Math.round(Math.max(900, textLen * fontSize * 1.6) * sx)
+        h = Math.round((fontSize * 3.2 + 40) * sy)
+      } else if (layout === 'staircase') {
+        // 阶梯错落排版
+        w = Math.round((textLen * fontSize * 0.9 + 140) * sx)
+        h = Math.round((fontSize * 2.6 + 60) * sy)
+      } else if (layout === 'pill') {
+        // 胶囊字块排版
+        w = Math.round((textLen * fontSize * 0.75 + 90) * sx)
+        h = Math.round((fontSize * 1.8 + 24) * sy)
+      } else if (layout === 'bubble') {
+        // 漫画气泡排版
+        w = Math.round((textLen * fontSize * 0.8 + 120) * sx)
+        h = Math.round((fontSize * 2.2 + 60) * sy)
+      } else if (layout === 'marquee') {
+        // 横幅流动排版
+        w = Math.round(Math.max(1200, textLen * fontSize * 1.2) * sx)
+        h = Math.round((fontSize * 1.8 + 40) * sy)
+      } else if (layout === 'ransom') {
+        // 剪报拼贴排版
+        w = Math.round((textLen * fontSize * 0.85 + 110) * sx)
+        h = Math.round((fontSize * 2.0 + 50) * sy)
+      } else {
+        // 标准/居中 JIZURA 排版 (含装饰与修饰外延)
+        w = Math.round((textLen * fontSize * 0.75 + 80) * sx)
+        h = Math.round((fontSize * 1.8 + 40) * sy)
+      }
     } else {
-      const textLen = (tr.displayedText || ' ').length
-      const fontSize = layer.fontSize || 48
-      w = Math.max(120, textLen * fontSize * 0.6 * sx)
-      h = Math.max(60, fontSize * 1.3 * sy)
+      // 标准关键帧文字模式高宽
+      const cached = layerNodesMap.get(layer.id)
+      if (cached?.textNode && cached.textNode.width > 0) {
+        w = Math.round(cached.textNode.width * sx)
+        h = Math.round(cached.textNode.height * sy)
+      } else {
+        w = Math.round(Math.max(120, textLen * fontSize * 0.62) * sx)
+        h = Math.round(fontSize * 1.35 * sy)
+      }
+    }
+
+    // 实时同步图层的基础像素尺寸
+    if (sx > 0 && sy > 0) {
+      layer.width = Math.round(w / sx)
+      layer.height = Math.round(h / sy)
+      if (!layer.naturalWidth) layer.naturalWidth = layer.width
+      if (!layer.naturalHeight) layer.naturalHeight = layer.height
     }
   } else if (layer.kind === 'image') {
-    if (layer.assetUrl && textureCache.has(layer.assetUrl)) {
-      const tex = textureCache.get(layer.assetUrl)!
-      const tw = tex.width || 900
-      const th = tex.height || 620
-      const fitScale = Math.min(900 / tw, 620 / th, 1)
-      w = tw * fitScale * sx
-      h = th * fitScale * sy
-    } else {
-      w = 600 * sx
-      h = 360 * sy
-    }
+    const nw = layer.naturalWidth || layer.width || 600
+    const nh = layer.naturalHeight || layer.height || 400
+    w = Math.round(nw * sx)
+    h = Math.round(nh * sy)
+    layer.width = nw
+    layer.height = nh
   } else if (layer.kind === 'shape') {
-    w = (layer.blockWidth || 400) * sx
-    h = (layer.blockHeight || 280) * sy
+    const nw = layer.blockWidth || layer.width || 400
+    const nh = layer.blockHeight || layer.height || 280
+    w = Math.round(nw * sx)
+    h = Math.round(nh * sy)
+    layer.width = nw
+    layer.height = nh
+  } else if (layer.kind === 'background') {
+    w = STAGE_WIDTH
+    h = STAGE_HEIGHT
+    layer.width = STAGE_WIDTH
+    layer.height = STAGE_HEIGHT
   }
 
   const pad = 12
@@ -427,7 +488,8 @@ function drawBackground() {
   )
 
   const bgKey = activeBgLayer?.bgPreset || activeBgLayer?.bgType || editor.backgroundConfig.type || 'meshBlobs'
-  const style = getJizuraStyle(editor.activeJizuraStyleId) || JIZURA_STYLES[0]
+  const bgStyleId = activeBgLayer?.styleId || editor.activeJizuraStyleId || 'noir'
+  const style = getJizuraStyle(bgStyleId) || JIZURA_STYLES[0]
   const scheme = {
     bg: activeBgLayer?.colorA || editor.backgroundConfig.colorA || style.scheme.bg,
     fg: style.scheme.fg,
@@ -520,12 +582,21 @@ function renderScene() {
 
         if (cached.jizuraCtx && cached.jizuraTexture) {
           cached.jizuraCtx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT)
-          const singlePlan = compileJizuraLayerPlan(layer, editor.activeJizuraStyleId)
-          if (singlePlan) {
-            const localTime = Math.max(0, Math.min(layer.duration, editor.currentTime - layer.start))
-            renderJizuraFrame(cached.jizuraCtx, singlePlan, localTime, { transparent: true })
-            cached.jizuraTexture.source?.update()
+          const layerStyleId = layer.styleId || editor.activeJizuraStyleId || 'noir'
+
+          if (editor.continuousLyricTransition) {
+            const continuousPlan = compileContinuousLyricPlan(editor.layers, layerStyleId, editor.duration)
+            if (continuousPlan) {
+              renderJizuraFrame(cached.jizuraCtx, continuousPlan, editor.currentTime, { transparent: true })
+            }
+          } else {
+            const singlePlan = compileJizuraLayerPlan(layer, layerStyleId)
+            if (singlePlan) {
+              const localTime = Math.max(0, Math.min(layer.duration, editor.currentTime - layer.start))
+              renderJizuraFrame(cached.jizuraCtx, singlePlan, localTime, { transparent: true })
+            }
           }
+          cached.jizuraTexture.source?.update()
         }
 
         // 定位与变换：支持用户拖拽与关键帧平移 (相对于画布基准 960, 540)
@@ -732,6 +803,20 @@ async function initPixi() {
   renderScene()
   raf = requestAnimationFrame(animate)
 }
+
+watch(
+  () => [
+    editor.leftWidth,
+    editor.rightWidth,
+    editor.bottomHeight,
+    editor.presetDrawerWidth,
+    editor.isLeftPanelCollapsed,
+    editor.activePresetDrawerCategory,
+  ],
+  () => {
+    updateViewportTransform()
+  }
+)
 
 watch(
   () => [editor.currentTime, editor.selectedLayerId],

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { J, getSharedRenderer } from '../../../engine/jizura/renderer'
+import { isExitPreset, isHoldPreset } from '../../../engine/presets'
 import { useEditorStore } from '../../../stores/editor'
 
 const props = defineProps<{
@@ -36,17 +37,30 @@ function renderThumbnail() {
       const plan = J.previewPlan(project, 'layout', 'center')
       renderer.frame(ctx, plan, 0.8, { scale: canvas.width / plan.W, fast: true, noHud: true })
     } else {
-      const plan = J.previewPlan(project, cat, key)
+      let targetCat = cat
+      let targetKey = key
+      if (cat === 'standard-anim') {
+        if (isHoldPreset(key)) targetCat = 'hold'
+        else if (isExitPreset(key)) targetCat = 'exit'
+        else targetCat = 'enter'
+
+        if (key === 'q-bounce' || key === 'jelly-pop') targetKey = 'pop'
+        else if (key === 'spring-drop') targetKey = 'drop'
+        else if (key === 'rubber-in') targetKey = 'rubber'
+        else if (key === 'q-jelly') targetKey = 'jelly'
+      }
+
+      const plan = J.previewPlan(project, targetCat, targetKey) || J.previewPlan(project, 'enter', 'pop')
       if (plan) {
         const c = plan.cuts && plan.cuts.length ? plan.cuts[plan.cuts.length - 1] : null
         let t = 0.8
         if (c) {
-          if (cat === 'enter') t = c.start + 0.35
-          else if (cat === 'exit') t = c.end - 0.25
-          else if (cat === 'hold') t = c.start + (c.dur || 2) * 0.5
+          if (targetCat === 'enter') t = c.start + 0.35
+          else if (targetCat === 'exit') t = c.end - 0.25
+          else if (targetCat === 'hold') t = c.start + (c.dur || 2) * 0.5
           else t = c.start + 0.6
         }
-        renderer.frame(ctx, plan, t, { scale: canvas.width / plan.W, fast: true, noHud: true, noGhost: cat !== 'fx' })
+        renderer.frame(ctx, plan, t, { scale: canvas.width / plan.W, fast: true, noHud: true, noGhost: targetCat !== 'fx' })
       }
     }
   } catch (e) {

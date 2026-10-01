@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, type Component } from 'vue'
+import { ref, watch, type Component } from 'vue'
 import {
   CollapsibleContent,
   CollapsibleRoot,
@@ -7,11 +7,14 @@ import {
 } from 'reka-ui'
 import { ChevronDown, GripVertical } from '@lucide/vue'
 
+const COLLAPSIBLE_STORAGE_KEY = 'frameflow_inspector_sections_v1'
+
 const props = withDefaults(
   defineProps<{
     title?: string
     icon?: Component | object
     defaultOpen?: boolean
+    storageKey?: string
     badge?: string
     draggable?: boolean
     isDragging?: boolean
@@ -21,6 +24,7 @@ const props = withDefaults(
     title: '',
     icon: undefined,
     defaultOpen: true,
+    storageKey: '',
     badge: '',
     draggable: false,
     isDragging: false,
@@ -35,7 +39,33 @@ const emit = defineEmits<{
   (e: 'dragend', event: DragEvent): void
 }>()
 
-const isOpen = ref(props.defaultOpen)
+function getSectionKey() {
+  return props.storageKey || props.title
+}
+
+function loadOpenState() {
+  try {
+    const raw = localStorage.getItem(COLLAPSIBLE_STORAGE_KEY)
+    const states = raw ? JSON.parse(raw) as Record<string, boolean> : {}
+    const key = getSectionKey()
+    return typeof states[key] === 'boolean' ? states[key] : props.defaultOpen
+  } catch {
+    return props.defaultOpen
+  }
+}
+
+const isOpen = ref(loadOpenState())
+
+watch(isOpen, (open) => {
+  try {
+    const raw = localStorage.getItem(COLLAPSIBLE_STORAGE_KEY)
+    const states = raw ? JSON.parse(raw) as Record<string, boolean> : {}
+    states[getSectionKey()] = open
+    localStorage.setItem(COLLAPSIBLE_STORAGE_KEY, JSON.stringify(states))
+  } catch {
+    // localStorage may be unavailable in restricted browser contexts.
+  }
+})
 </script>
 
 <template>

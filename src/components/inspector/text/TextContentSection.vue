@@ -200,6 +200,12 @@ function updateColor(key: 'fontColor' | 'treatmentColor' | 'treatmentColorB', va
         </div>
       </div>
 
+      <!-- 渲染规格与模式指示 (JIZURA 与标准文字具备不同尺寸规格) -->
+      <div class="flex items-center justify-between bg-[#0a0e16] p-2 rounded-md border border-[#1d2533] text-[10px] text-slate-400 font-mono">
+        <span class="text-slate-400">{{ layer.useJizura !== false ? 'JIZURA 版式尺寸' : '标准文字尺寸' }}</span>
+        <span class="text-violet-400 font-semibold">{{ layer.width || 400 }} × {{ layer.height || 80 }} px</span>
+      </div>
+
       <!-- JIZURA 动态特性选择区 (开启时显示) -->
       <div v-if="props.layer.useJizura !== false" class="space-y-2.5 pt-1">
         <!-- 1. JIZURA 布局排版 (Layout · 186 种) -->
@@ -315,6 +321,25 @@ function updateColor(key: 'fontColor' | 'treatmentColor' | 'treatmentColorB', va
             :options="transOptions"
             @update:model-value="updateTrans"
           />
+        </div>
+
+        <!-- 连贯歌词切换模式开关 -->
+        <div class="flex items-center justify-between bg-[#0e131b] p-2 rounded-lg border border-[#232c3a] my-2">
+          <div>
+            <span class="text-xs font-semibold text-slate-200">前后歌词连贯无缝切换</span>
+            <p class="text-[9px] text-slate-500 mt-0.5">自动衔接前后句歌词转场与镜头流动</p>
+          </div>
+          <button
+            :class="[
+              'px-2.5 py-1 rounded text-xs font-semibold transition',
+              editor.continuousLyricTransition
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-[#18202d] text-slate-400 hover:text-white'
+            ]"
+            @click="editor.toggleContinuousLyricTransition"
+          >
+            {{ editor.continuousLyricTransition ? '已开启连贯转场' : '独立切片' }}
+          </button>
         </div>
 
         <!-- 修饰色彩与参数控制 -->

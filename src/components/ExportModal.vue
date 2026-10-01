@@ -10,6 +10,7 @@ import {
 import { computeLayerTransform } from '../engine/animation'
 import {
   compileJizuraLayerPlan,
+  compileContinuousLyricPlan,
   drawJizuraBackground,
   renderJizuraFrame,
 } from '../engine/jizura/renderer'
@@ -36,6 +37,8 @@ const isExporting = ref(false)
 const exportProgress = ref(0)
 const exportSuccess = ref(false)
 
+const importInputRef = ref<HTMLInputElement | null>(null)
+
 function close() {
   if (isExporting.value) return
   exportSuccess.value = false
@@ -44,14 +47,25 @@ function close() {
 
 // 导出 JSON 项目文件
 function exportJSON() {
-  const jsonStr = editor.exportProjectJSON()
-  const blob = new Blob([jsonStr], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `jizura-frameflow-${Date.now()}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+  editor.downloadProjectFile()
+}
+
+// 导入 JSON 项目文件
+function onImportFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = (event) => {
+    const text = event.target?.result as string
+    if (text) {
+      const ok = editor.importProjectJSON(text)
+      if (ok) {
+        close()
+      }
+    }
+  }
+  reader.readAsText(file)
+  ;(e.target as HTMLInputElement).value = ''
 }
 
 // 逐帧离线渲染并使用 MediaRecorder 编码导出 JIZURA 动态视频
@@ -172,7 +186,8 @@ function renderFrameToCanvas(
   )
 
   const bgKey = activeBgLayer?.bgPreset || activeBgLayer?.bgType || editor.backgroundConfig.type || 'meshBlobs'
-  const style = getJizuraStyle(editor.activeJizuraStyleId) || JIZURA_STYLES[0]
+  const bgStyleId = activeBgLayer?.styleId || editor.activeJizuraStyleId || 'noir'
+  const style = getJizuraStyle(bgStyleId) || JIZURA_STYLES[0]
   const scheme = {
     bg: activeBgLayer?.colorA || editor.backgroundConfig.colorA || style.scheme.bg,
     fg: style.scheme.fg,
@@ -204,10 +219,19 @@ function renderFrameToCanvas(
 
       if (isJizura && layerCtx) {
         layerCtx.clearRect(0, 0, 1920, 1080)
-        const singlePlan = compileJizuraLayerPlan(layer, editor.activeJizuraStyleId)
-        if (singlePlan) {
-          const localTime = Math.max(0, Math.min(layer.duration, time - layer.start))
-          renderJizuraFrame(layerCtx, singlePlan, localTime, { transparent: true })
+        const layerStyleId = layer.styleId || editor.activeJizuraStyleId || 'noir'
+
+        if (editor.continuousLyricTransition) {
+          const continuousPlan = compileContinuousLyricPlan(editor.layers, layerStyleId, editor.duration)
+          if (continuousPlan) {
+            renderJizuraFrame(layerCtx, continuousPlan, time, { transparent: true })
+          }
+        } else {
+          const singlePlan = compileJizuraLayerPlan(layer, layerStyleId)
+          if (singlePlan) {
+            const localTime = Math.max(0, Math.min(layer.duration, time - layer.start))
+            renderJizuraFrame(layerCtx, singlePlan, localTime, { transparent: true })
+          }
         }
 
         ctx.save()
@@ -365,21 +389,38 @@ function renderFrameToCanvas(
         </div>
       </div>
 
-      <!-- 项目文件备份卡片 -->
+      <!-- 项目文件备份与还原卡片 -->
       <div class="rounded-lg bg-[#0e121a] p-3 border border-[#212936] flex items-center justify-between">
         <div class="flex items-center gap-2.5">
           <FileJson :size="17" class="text-cyan-400 shrink-0" />
           <div>
             <p class="text-xs font-medium text-slate-200">工程源文件 (JSON)</p>
-            <p class="text-[10px] text-slate-500">保存全部 JIZURA 预设、关键帧与图层数据</p>
+            <p class="text-[10px] text-slate-500">保存或恢复全部 JIZURA 预设、关键帧与图层数据</p>
           </div>
         </div>
-        <button
-          class="px-2.5 py-1 text-xs rounded-md border border-[#2a3444] bg-[#161c26] text-slate-300 hover:text-white hover:border-slate-500 transition"
-          @click="exportJSON"
-        >
-          导出工程
-        </button>
+        <div class="flex items-center gap-2">
+          <input
+            ref="importInputRef"
+            type="file"
+            accept=".json"
+            class="hidden"
+            @change="onImportFile"
+          />
+          <button
+            class="px-2.5 py-1 text-xs rounded-md border border-[#2a3444] bg-[#161c26] text-slate-300 hover:text-white hover:border-slate-500 transition"
+            title="选择 JSON 文件恢复工程"
+            @click="importInputRef?.click"
+          >
+            导入工程
+          </button>
+          <button
+            class="px-2.5 py-1 text-xs rounded-md border border-[#2a3444] bg-[#161c26] text-slate-300 hover:text-white hover:border-slate-500 transition"
+            title="导出 JSON 工程描述文件"
+            @click="exportJSON"
+          >
+            导出工程
+          </button>
+        </div>
       </div>
     </div>
 

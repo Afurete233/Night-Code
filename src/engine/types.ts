@@ -35,9 +35,13 @@ export interface Layer {
   duration: number
   visible: boolean
   locked: boolean
-  // 基础变换属性
+  // 基础变换属性与尺寸
   x: number
   y: number
+  width?: number // 实际当前渲染宽度 (像素 px)
+  height?: number // 实际当前渲染高度 (像素 px)
+  naturalWidth?: number // 原始固有宽度 (原图/未缩放像素)
+  naturalHeight?: number // 原始固有高度 (原图/未缩放像素)
   scale: number // 百分比, 100 为原尺寸
   scaleX?: number // 水平独立缩放百分比 (不锁比例)
   scaleY?: number // 垂直独立缩放百分比 (不锁比例)
@@ -53,6 +57,7 @@ export interface Layer {
   animPreset?: string
   animPresetParams?: Record<string, any>
   useJizura?: boolean // 是否启用 JIZURA 动态文字与表现引擎
+  styleId?: string // 图层专属 JIZURA 风格主题 ID (独立保存与渲染，不影响其他图层)
   // JIZURA 歌词 8 大核心要素
   layoutAnim?: string // 1. 布局 (Layout · 186 种)
   enterAnim?: string // 2. 入场 (Enter · 112 种)

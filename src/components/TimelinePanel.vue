@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import {
   AudioLines,
+  Copy,
+  CopyPlus,
   Edit3,
   Eye,
   EyeOff,
@@ -11,6 +13,7 @@ import {
   Music2,
   Palette,
   Plus,
+  Scissors,
   Square,
   SquareStack,
   Trash2,
@@ -134,6 +137,38 @@ function cancelRename() {
 
 function getContextMenuItems(layer: Layer): ContextMenuItemDef[] {
   return [
+    {
+      label: '在当前时间点切割',
+      icon: Scissors,
+      shortcut: 'S',
+      onClick: () => editor.splitLayerAtCurrentTime(layer.id),
+    },
+    {
+      separator: true,
+      label: '',
+    },
+    {
+      label: '复制图层',
+      icon: Copy,
+      shortcut: 'Ctrl+C',
+      onClick: () => editor.copySelectedLayers(),
+    },
+    {
+      label: '粘贴图层',
+      icon: CopyPlus,
+      shortcut: 'Ctrl+V',
+      onClick: () => editor.pasteLayers(),
+    },
+    {
+      label: '创建图层副本',
+      icon: CopyPlus,
+      shortcut: 'Ctrl+D',
+      onClick: () => editor.duplicateSelectedLayers(),
+    },
+    {
+      separator: true,
+      label: '',
+    },
     {
       label: '重命名图层',
       icon: Edit3,
@@ -366,6 +401,9 @@ onBeforeUnmount(() => {
         <div class="h-4 w-px bg-[#242b35] mx-1" />
         <button class="icon-button" title="新建文字图层" @click="editor.addTextLayer">
           <Plus :size="15" />
+        </button>
+        <button class="icon-button text-violet-400 hover:text-violet-200" title="在当前时间点切割选中的图层 (S)" @click="editor.splitLayerAtCurrentTime()">
+          <Scissors :size="15" />
         </button>
       </div>
 
@@ -642,11 +680,9 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="flex items-center gap-2 text-[10px] text-slate-500">
-          <span class="text-violet-400 font-medium">滚轮：左右进度 · Ctrl+滚轮：时间线缩放</span>
+          <span class="text-violet-400 font-medium">滚轮：左右进度 · Ctrl+滚轮：缩放 · S 键：切割图层 · Ctrl+C/V/D：复制粘贴</span>
           <span>·</span>
-          <span>按住标尺或指针极速划过 (Scrubbing)</span>
-          <span>·</span>
-          <span>图层轨道上下联动</span>
+          <span>按住标尺极速划过 (Scrubbing)</span>
         </div>
       </div>
     </template>

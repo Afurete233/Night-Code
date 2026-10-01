@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
-  ExternalLink,
   RotateCcw,
   Sliders,
   Sparkles,
@@ -20,13 +19,34 @@ const editor = useEditorStore()
 
 const standardPresets = [
   { id: 'none', name: '无动画', desc: '静态展示' },
-  { id: 'pop-in', name: 'Q弹缩放入场', desc: '带回弹缩放冲击力' },
+  { id: 'pop-in', name: 'Q弹缩放入场', desc: '果冻回弹+弹性爆发' },
+  { id: 'jelly-pop', name: 'Q弹果冻冲击', desc: '挤压拉伸形变+果冻回弹' },
+  { id: 'line-bounce', name: '挤压弹线', desc: '横向拉伸、弹线震荡后归位' },
+  { id: 'squash-line', name: '挤压弹线（强）', desc: '强烈扁平挤压与连续回弹' },
+  { id: 'squash-stretch', name: '挤压拉伸', desc: '纵向拉伸与落地挤压' },
+  { id: 'jelly-deform', name: '果冻变形', desc: '软体波浪式形变入场' },
+  { id: 'wave-bounce', name: '波浪弹跳', desc: '旋转倾斜叠加弹线回弹' },
+  { id: 'elastic-snap', name: '弹性甩线', desc: '快速甩动后弹性收束' },
+  { id: 'spring-drop', name: 'Q弹跌落碰撞', desc: '高处跌落落地挤压并弹起' },
+  { id: 'rubber-in', name: '橡皮筋拉伸', desc: '横向拉开瞬间释放回弹' },
   { id: 'fade-up', name: '上浮淡入', desc: '从下方平滑升起并淡入' },
   { id: 'blur-in', name: '聚焦放大淡入', desc: '大尺寸聚焦平滑入场' },
-  { id: 'slide-right', name: '侧向划入', desc: '从侧边快速飞入缓冲' },
+  { id: 'slide-right', name: '左侧划入', desc: '从左侧快速飞入缓冲' },
+  { id: 'slide-left', name: '右侧划入', desc: '从右侧快速飞入缓冲' },
   { id: 'bounce-drop', name: '下落碰撞弹跳', desc: '高处跌落并物理回弹' },
-  { id: 'spin-in', name: '旋转缩放入场', desc: '旋转同时伴随缩放显现' },
+  { id: 'spin-in', name: '旋转缩放入场', desc: '旋转同时伴随Q弹缩放显现' },
+  { id: 'flip-x', name: '3D 轴向翻转', desc: '沿 X 轴翻转展开' },
+  { id: 'glitch-in', name: '赛博故障入场', desc: '随机位移与高频抖动解码' },
+  { id: 'whip-in', name: '急甩鞭打入场', desc: '强劲横向甩出与拖尾缓冲' },
+  { id: 'q-jelly', name: 'Q弹果冻微动', desc: '持续果冻形变摇晃' },
+  { id: 'breathe', name: '脉冲呼吸', desc: '周期性平滑缩放呼吸' },
   { id: 'swing', name: '悬挂轻摇', desc: '持续左右柔和振荡摇摆' },
+  { id: 'float', name: '悬浮漂移', desc: '优雅正弦漂移' },
+  { id: 'beat-hop', name: '心跳跃动', desc: '配合重音向上跳跃与Q弹' },
+  { id: 'fall', name: '重力坠落退场', desc: '向下重力跌落并淡出' },
+  { id: 'explode', name: '爆散退场', desc: '瞬间放大爆散并淡出' },
+  { id: 'shrink', name: '黑洞收缩退场', desc: '快速向中心缩窄消失' },
+  { id: 'squash-out', name: '压扁退场', desc: '垂直压扁平移淡出' },
 ]
 
 const presetOptions = standardPresets.map((p) => ({
@@ -65,44 +85,15 @@ function resetParams() {
     :icon="Sparkles"
     :default-open="true"
   >
-    <template #actions>
-      <button
-        class="flex items-center gap-1 text-[10px] text-violet-400 hover:text-violet-300 transition"
-        title="在右侧展开视觉预设面板"
-        @click="editor.openPresetDrawer('standard-anim')"
-      >
-        <ExternalLink :size="11" />
-        <span>展开预览</span>
-      </button>
-    </template>
-
     <div class="space-y-3">
-      <!-- 预设下拉选择 -->
+      <!-- 效果预设统一使用下拉选择，避免面板堆叠过多卡片 -->
       <div>
-        <label class="block text-[10px] font-medium text-slate-400 mb-1">动效预设选择</label>
+        <label class="block text-[10px] font-medium text-slate-400 mb-1">变形 / MG 动效预设</label>
         <Select
           :model-value="currentPresetId"
           :options="presetOptions"
           @update:model-value="applyPreset"
         />
-      </div>
-
-      <!-- 快捷卡片切换 -->
-      <div class="grid grid-cols-2 gap-1.5 pt-1">
-        <button
-          v-for="p in standardPresets"
-          :key="p.id"
-          :class="[
-            'flex flex-col items-start rounded-md border p-2 text-left transition relative overflow-hidden',
-            currentPresetId === p.id
-              ? 'border-violet-500 bg-violet-950/40 text-violet-200 shadow-sm ring-1 ring-violet-500/50'
-              : 'border-[#202733] bg-[#0c1015] text-slate-400 hover:border-slate-600 hover:text-slate-200'
-          ]"
-          @click="applyPreset(p.id)"
-        >
-          <span class="text-[11px] font-semibold">{{ p.name }}</span>
-          <span class="text-[9px] text-slate-500 mt-0.5 line-clamp-1">{{ p.desc }}</span>
-        </button>
       </div>
 
       <!-- 细节参数调节 -->

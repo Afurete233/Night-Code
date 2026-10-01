@@ -76,13 +76,28 @@ const items = computed(() => {
   }
   if (cat === 'standard-anim') {
     const all = [
-      { id: 'pop-in', name: 'Q弹缩放入场', desc: '带回弹缩放冲击力' },
+      { id: 'pop-in', name: 'Q弹缩放入场', desc: '果冻回弹+弹性爆发' },
+      { id: 'jelly-pop', name: 'Q弹果冻冲击', desc: '夸张挤压拉伸形变+果冻回弹' },
+      { id: 'spring-drop', name: 'Q弹跌落碰撞', desc: '高处跌落落地挤压并弹起' },
+      { id: 'rubber-in', name: '橡皮筋拉伸', desc: '横向拉开瞬间释放回弹' },
       { id: 'fade-up', name: '上浮淡入', desc: '从下方平滑升起并淡入' },
       { id: 'blur-in', name: '聚焦放大淡入', desc: '大尺寸聚焦平滑入场' },
-      { id: 'slide-right', name: '侧向划入', desc: '从侧边快速飞入缓冲' },
+      { id: 'slide-right', name: '左侧划入', desc: '从左侧快速飞入缓冲' },
+      { id: 'slide-left', name: '右侧划入', desc: '从右侧快速飞入缓冲' },
       { id: 'bounce-drop', name: '下落碰撞弹跳', desc: '高处跌落并物理回弹' },
-      { id: 'spin-in', name: '旋转缩放入场', desc: '旋转同时伴随缩放显现' },
+      { id: 'spin-in', name: '旋转缩放入场', desc: '旋转同时伴随Q弹缩放显现' },
+      { id: 'flip-x', name: '3D 轴向翻转', desc: '沿 X 轴翻转展开' },
+      { id: 'glitch-in', name: '赛博故障入场', desc: '随机位移与高频抖动解码' },
+      { id: 'whip-in', name: '急甩鞭打入场', desc: '强劲横向甩出与拖尾缓冲' },
+      { id: 'q-jelly', name: 'Q弹果冻微动', desc: '持续果果弹弹地形变摇晃' },
+      { id: 'breathe', name: '脉冲呼吸', desc: '周期性平滑缩放呼吸' },
       { id: 'swing', name: '悬挂轻摇', desc: '持续左右柔和振荡摇摆' },
+      { id: 'float', name: '悬浮漂移', desc: '优雅8字轨迹正弦漂移' },
+      { id: 'beat-hop', name: '心跳跃动', desc: '配合重音向上跳跃与Q弹' },
+      { id: 'fall', name: '重力坠落退场', desc: '向下重力跌落并淡出' },
+      { id: 'explode', name: '爆散退场', desc: '瞬间放大爆散并淡出' },
+      { id: 'shrink', name: '黑洞收缩退场', desc: '快速向中心缩窄消失' },
+      { id: 'squash-out', name: '压扁退场', desc: '垂直压扁平移淡出' },
       { id: 'none', name: '无动画', desc: '静态展示' },
     ]
     if (!q) return all

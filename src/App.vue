@@ -9,6 +9,7 @@ import LyricImportModal from './components/LyricImportModal.vue'
 import JizuraPresetExplorerModal from './components/JizuraPresetExplorerModal.vue'
 import PresetDrawerPanel from './components/inspector/common/PresetDrawerPanel.vue'
 import TimelinePanel from './components/TimelinePanel.vue'
+import { parseLyricText } from './engine/jizura/lyrics'
 import { useEditorStore } from './stores/editor'
 
 const editor = useEditorStore()
@@ -159,9 +160,115 @@ function onKeydown(event: KeyboardEvent) {
       : Math.min(editor.duration, editor.currentTime + step)
     editor.setTime(Number(nextTime.toFixed(2)), true)
   }
+
+  // 快捷键: Ctrl+C 复制 / Ctrl+V 粘贴 / Ctrl+D 副本
+  if ((event.ctrlKey || event.metaKey) && !isInputFocused) {
+    const key = event.key.toLowerCase()
+    if (key === 'c') {
+      event.preventDefault()
+      editor.copySelectedLayers()
+    } else if (key === 'v') {
+      event.preventDefault()
+      editor.pasteLayers()
+    } else if (key === 'd') {
+      event.preventDefault()
+      editor.duplicateSelectedLayers()
+    }
+  }
+
+  // 快捷键: S 键在播放指针处切割图层
+  if (!isInputFocused && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 's') {
+    event.preventDefault()
+    editor.splitLayerAtCurrentTime()
+  }
+}
+
+let bridgeTimer: number | undefined
+let lastBriefId = ''
+
+async function importBriefAssets(brief: Record<string, unknown>) {
+  const assets = Array.isArray(brief.assets) ? brief.assets : []
+  const rawUrls = [
+    ...(typeof brief.audioUrl === 'string' && brief.audioUrl ? [brief.audioUrl] : []),
+    ...(Array.isArray(brief.imageUrls) ? brief.imageUrls.filter((url): url is string => typeof url === 'string' && Boolean(url)) : []),
+  ]
+
+  // 1. 处理结构化素材对象 (支持传递指定 width, height, x, y, scale 等)
+  for (const item of assets) {
+    if (!item || typeof item !== 'object') continue
+    const url = typeof item.url === 'string' ? item.url : ''
+    if (!url) continue
+    try {
+      const response = await fetch(url)
+      if (!response.ok) continue
+      const blob = await response.blob()
+      const filename = item.name || decodeURIComponent(new URL(url, window.location.href).pathname.split('/').pop() || 'dsh-asset')
+      const initialPos = (typeof item.x === 'number' && typeof item.y === 'number') ? { x: item.x, y: item.y } : undefined
+      editor.addAssetLayer(new File([blob], filename, { type: blob.type || 'application/octet-stream' }), initialPos)
+      
+      // 如果指定了宽高，赋值给刚刚添加的选中图层
+      if (editor.selectedLayer) {
+        if (typeof item.width === 'number') {
+          editor.selectedLayer.width = item.width
+          editor.selectedLayer.naturalWidth = item.naturalWidth || item.width
+        }
+        if (typeof item.height === 'number') {
+          editor.selectedLayer.height = item.height
+          editor.selectedLayer.naturalHeight = item.naturalHeight || item.height
+        }
+        if (typeof item.scale === 'number') editor.selectedLayer.scale = item.scale
+        if (typeof item.opacity === 'number') editor.selectedLayer.opacity = item.opacity
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  // 2. 处理常规 URL 列表
+  for (const url of rawUrls) {
+    try {
+      const response = await fetch(url)
+      if (!response.ok) continue
+      const blob = await response.blob()
+      const filename = decodeURIComponent(new URL(url, window.location.href).pathname.split('/').pop() || 'dsh-asset')
+      editor.addAssetLayer(new File([blob], filename, { type: blob.type || 'application/octet-stream' }))
+    } catch {
+      // Ignore one unavailable asset and continue importing the rest of the brief.
+    }
+  }
+}
+
+async function pollDshBrief() {
+  try {
+    const response = await fetch('/api/dsh/production-brief', { cache: 'no-store' })
+    if (!response.ok) return
+    const payload = await response.json() as { brief?: Record<string, unknown> | null }
+    const brief = payload.brief
+    if (!brief) return
+    const briefId = String(brief.id || brief.receivedAt || '')
+    if (!briefId || briefId === lastBriefId) return
+    lastBriefId = briefId
+
+    const project = brief.project
+    if (project && typeof project === 'object') {
+      editor.importProjectJSON(JSON.stringify(project))
+      await importBriefAssets(brief)
+      return
+    }
+
+    const lyrics = typeof brief.lyrics === 'string' ? brief.lyrics.trim() : ''
+    if (lyrics) {
+      editor.importLyricsToTimeline(parseLyricText(lyrics), { clearExisting: true })
+    }
+    await importBriefAssets(brief)
+  } catch {
+    // The bridge is optional; the editor remains fully usable without DSH.
+  }
 }
 
 onMounted(() => {
+  pollDshBrief()
+  bridgeTimer = window.setInterval(pollDshBrief, 1500)
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('resize', handleWindowResize)
   window.oncontextmenu = preventGlobalContextMenu
@@ -172,6 +279,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (bridgeTimer !== undefined) window.clearInterval(bridgeTimer)
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', handleWindowResize)
   window.oncontextmenu = null

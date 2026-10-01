@@ -18,9 +18,9 @@ export function getSharedRenderer() {
 export function compileJizuraLayerPlan(layer: Layer, activeStyleId = 'noir') {
   if (!J || !J.plan) return null
 
-  const style = getJizuraStyle(activeStyleId) || JIZURA_STYLES[0]
+  const style = getJizuraStyle(layer.styleId || activeStyleId) || JIZURA_STYLES[0]
   const project = J.defaultProject ? J.defaultProject() : {}
-  project.style = style.id || activeStyleId || 'noir'
+  project.style = style.id || 'noir'
   project.aspect = '16:9'
   project.res = 1080
   project.fps = 30
@@ -45,7 +45,7 @@ export function compileJizuraLayerPlan(layer: Layer, activeStyleId = 'noir') {
       treat: layer.treatAnim || layer.textTreatment || 'glow',
       bg: 'none',
       cam: layer.camAnim || 'push',
-      trans: layer.transAnim || 'wipe',
+      trans: layer.transAnim && layer.transAnim !== 'none' ? layer.transAnim : 'wipe',
     },
   }
 
@@ -75,6 +75,88 @@ export function compileJizuraLayerPlan(layer: Layer, activeStyleId = 'noir') {
     return plan
   } catch (e) {
     console.error('Failed to compile single layer plan:', e)
+    return null
+  }
+}
+
+/**
+ * 编译多句歌词连贯无缝切换的 JIZURA 统一 Plan (支持前后歌词连续转场、镜头衔接与连续动画流)
+ */
+export function compileContinuousLyricPlan(
+  layers: Layer[],
+  activeStyleId = 'noir',
+  duration = 10
+) {
+  if (!J || !J.plan) return null
+
+  const textLayers = layers.filter((l) => l.kind === 'text' && l.visible && l.useJizura !== false)
+  if (textLayers.length === 0) return null
+
+  // 按时间先后顺序排序
+  const sortedLayers = [...textLayers].sort((a, b) => a.start - b.start)
+
+  const style = getJizuraStyle(activeStyleId) || JIZURA_STYLES[0]
+  const project = J.defaultProject ? J.defaultProject() : {}
+  project.style = style.id || activeStyleId || 'noir'
+  project.aspect = '16:9'
+  project.res = 1080
+  project.fps = 30
+  project.lang = 'zh-Hans'
+  project.lyrics = sortedLayers.map((l) => l.text || ' ').join('\n')
+  project.unify = false
+
+  const overrides: Record<string, any> = {}
+  const lineTimes: Record<string, number> = {}
+
+  sortedLayers.forEach((layer, idx) => {
+    lineTimes[String(idx)] = layer.start
+    const decorList: string[] = []
+    if (layer.decorAnim && layer.decorAnim !== 'none') {
+      decorList.push(layer.decorAnim)
+    }
+
+    overrides[String(idx)] = {
+      single: true,
+      cuts: 1,
+      layout: layer.layoutAnim || layer.textLayout || 'center',
+      enter: layer.enterAnim || 'pop',
+      hold: layer.holdAnim || 'breathe',
+      exit: layer.exitAnim || 'fall',
+      decor: decorList.length > 0 ? decorList : undefined,
+      treat: layer.treatAnim || layer.textTreatment || 'glow',
+      bg: 'none',
+      cam: layer.camAnim || 'push',
+      trans: layer.transAnim && layer.transAnim !== 'none' ? layer.transAnim : 'wipe',
+    }
+  })
+
+  project.overrides = overrides
+  project.timing = {
+    bpm: 0,
+    offset: 0,
+    snap: false,
+    tail: 0.8,
+    lineTimes,
+    lineScale: 1,
+  }
+
+  try {
+    const plan = J.plan(project)
+    if (plan && plan.cuts) {
+      plan.dur = Math.max(duration, 1)
+      sortedLayers.forEach((layer, idx) => {
+        if (plan.cuts[idx]) {
+          plan.cuts[idx].start = layer.start
+          plan.cuts[idx].end = layer.start + layer.duration
+          plan.cuts[idx].visEnd = layer.start + layer.duration
+          if (layer.fontColor) plan.cuts[idx].color = layer.fontColor
+          if (layer.fontSize) plan.cuts[idx].size = layer.fontSize
+        }
+      })
+    }
+    return plan
+  } catch (e) {
+    console.error('Failed to compile continuous lyric plan:', e)
     return null
   }
 }

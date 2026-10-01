@@ -83,8 +83,18 @@ export function computeLayerTransform(layer: Layer, globalTime: number): Compute
   let displayedText = layer.text || ''
 
   // 通用 MG 动画预设计算 (支持文字、图片、色块图层)
-  const activePreset = layer.animPreset || layer.textPreset || 'none'
-  if (activePreset !== 'none') {
+  const hasMgAnim = !!(
+    (layer.animPreset && layer.animPreset !== 'none') ||
+    (layer.textPreset && layer.textPreset !== 'none') ||
+    (layer.enterAnim && layer.enterAnim !== 'none') ||
+    (layer.holdAnim && layer.holdAnim !== 'none' && layer.holdAnim !== 'still') ||
+    (layer.exitAnim && layer.exitAnim !== 'none' && layer.exitAnim !== 'cut') ||
+    (layer.camAnim && layer.camAnim !== 'none')
+  )
+
+  const activePreset = layer.animPreset || layer.textPreset || layer.enterAnim || 'none'
+  if (hasMgAnim) {
+    const prevScale = scale
     const presetRes = applyMgPreset(activePreset, {
       layerTime,
       layerDuration: layer.duration,
@@ -104,7 +114,15 @@ export function computeLayerTransform(layer: Layer, globalTime: number): Compute
 
     if (presetRes.x !== undefined) x = presetRes.x
     if (presetRes.y !== undefined) y = presetRes.y
-    if (presetRes.scale !== undefined) scale = presetRes.scale
+    if (presetRes.scale !== undefined) {
+      scale = presetRes.scale
+      if (presetRes.scaleX === undefined && prevScale > 0) {
+        scaleX *= scale / prevScale
+      }
+      if (presetRes.scaleY === undefined && prevScale > 0) {
+        scaleY *= scale / prevScale
+      }
+    }
     if (presetRes.scaleX !== undefined) scaleX = presetRes.scaleX
     if (presetRes.scaleY !== undefined) scaleY = presetRes.scaleY
     if (presetRes.opacity !== undefined) opacity = presetRes.opacity
