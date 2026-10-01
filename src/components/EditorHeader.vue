@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import {
-  CircleHelp,
+  Dices,
   Download,
   FolderUp,
+  PanelLeftClose,
+  PanelLeftOpen,
   Redo2,
   Sparkles,
   Undo2,
+  Wand2,
 } from '@lucide/vue'
 import { useEditorStore } from '../stores/editor'
 
@@ -32,23 +35,44 @@ function onImportJSON(e: Event) {
 
 <template>
   <header class="flex h-14 shrink-0 items-center justify-between border-b border-[#242b35] bg-[#0e1116] px-4 select-none">
-    <div class="flex items-center gap-4">
-      <div class="flex items-center gap-2 pr-3">
+    <div class="flex items-center gap-3">
+      <button
+        class="icon-button"
+        :title="editor.isLeftPanelCollapsed ? '展开左侧面板' : '收起左侧面板'"
+        @click="editor.toggleLeftPanel"
+      >
+        <PanelLeftOpen v-if="editor.isLeftPanelCollapsed" :size="16" />
+        <PanelLeftClose v-else :size="16" />
+      </button>
+
+      <div class="flex items-center gap-2 pr-2">
         <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-400 to-indigo-600 shadow-lg shadow-violet-900/30">
           <Sparkles :size="15" />
         </div>
-        <span class="text-sm font-semibold tracking-tight text-white">Frameflow</span>
+        <span class="text-sm font-semibold tracking-tight text-white">Frameflow · JIZURA</span>
       </div>
 
       <div class="h-5 w-px bg-[#242b35]" />
 
+      <!-- JIZURA 快捷操作：随机一版 & 歌词排版 -->
       <div class="flex items-center gap-2">
-        <span class="text-xs font-medium text-slate-300">
-          MG 视觉动画工程 · {{ editor.layers.length }} 图层
-        </span>
-        <span class="rounded bg-[#171c24] px-2 py-0.5 text-[10px] font-mono text-emerald-400 border border-emerald-950">
-          LIVE
-        </span>
+        <button
+          class="flex items-center gap-1.5 rounded-md bg-[#161c28] border border-violet-800/40 px-2.5 py-1 text-xs font-semibold text-violet-300 hover:bg-violet-600 hover:text-white transition shadow-sm"
+          title="一键随机重组 JIZURA 风格配色、排版、动效与背景"
+          @click="editor.randomizeJizura"
+        >
+          <Dices :size="13" />
+          <span>随机生成一版</span>
+        </button>
+
+        <button
+          class="flex items-center gap-1.5 rounded-md bg-[#161c28] border border-pink-800/40 px-2.5 py-1 text-xs font-semibold text-pink-300 hover:bg-pink-600 hover:text-white transition shadow-sm"
+          title="导入多行歌词/LRC自动生成整首视频序列"
+          @click="editor.showLyricModal = true"
+        >
+          <Wand2 :size="13" />
+          <span>歌词排版生成</span>
+        </button>
       </div>
     </div>
 
@@ -92,13 +116,6 @@ function onImportJSON(e: Event) {
       </button>
 
       <div class="mx-1 h-4 w-px bg-[#242b35]" />
-
-      <button
-        class="icon-button"
-        title="关于与快捷键指南"
-      >
-        <CircleHelp :size="15" />
-      </button>
 
       <!-- 渲染与导出 -->
       <button

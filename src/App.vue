@@ -5,53 +5,123 @@ import CanvasStage from './components/CanvasStage.vue'
 import EditorHeader from './components/EditorHeader.vue'
 import ExportModal from './components/ExportModal.vue'
 import InspectorPanel from './components/InspectorPanel.vue'
+import LyricImportModal from './components/LyricImportModal.vue'
+import JizuraPresetExplorerModal from './components/JizuraPresetExplorerModal.vue'
+import PresetDrawerPanel from './components/inspector/common/PresetDrawerPanel.vue'
 import TimelinePanel from './components/TimelinePanel.vue'
 import { useEditorStore } from './stores/editor'
 
 const editor = useEditorStore()
 
-const activeResizer = ref<'left' | 'right' | 'bottom' | null>(null)
+const workspaceRef = ref<HTMLElement | null>(null)
+const activeResizer = ref<'left' | 'right' | 'bottom' | 'drawer' | null>(null)
 
-function triggerCanvasResize() {
-  window.dispatchEvent(new Event('resize'))
-}
+let startMouseX = 0
+let startMouseY = 0
+let startDimension = 0
 
-function startResize(type: 'left' | 'right' | 'bottom', e: PointerEvent) {
+function startResize(type: 'left' | 'right' | 'bottom' | 'drawer', e: PointerEvent) {
   e.preventDefault()
-  const target = e.currentTarget as HTMLElement
-  try {
-    target.setPointerCapture(e.pointerId)
-  } catch {}
   activeResizer.value = type
+  startMouseX = e.clientX
+  startMouseY = e.clientY
+
+  if (type === 'left') {
+    startDimension = editor.leftWidth
+    document.body.style.cursor = 'col-resize'
+  } else if (type === 'right') {
+    startDimension = editor.rightWidth
+    document.body.style.cursor = 'col-resize'
+  } else if (type === 'bottom') {
+    startDimension = editor.bottomHeight
+    document.body.style.cursor = 'row-resize'
+  } else if (type === 'drawer') {
+    startDimension = editor.presetDrawerWidth
+    document.body.style.cursor = 'col-resize'
+  }
+  document.body.style.userSelect = 'none'
+
+  window.addEventListener('pointermove', onWindowPointerMove)
+  window.addEventListener('pointerup', onWindowPointerUp)
+  window.addEventListener('pointercancel', onWindowPointerUp)
 }
 
-function onResizerPointerMove(e: PointerEvent) {
+function onWindowPointerMove(e: PointerEvent) {
   if (!activeResizer.value) return
 
   if (activeResizer.value === 'left') {
-    editor.leftWidth = Math.max(180, Math.min(480, e.clientX))
+    const deltaX = e.clientX - startMouseX
+    const maxLeft = Math.max(200, window.innerWidth - 450)
+    editor.leftWidth = Math.max(160, Math.min(maxLeft, startDimension + deltaX))
   } else if (activeResizer.value === 'right') {
-    editor.rightWidth = Math.max(200, Math.min(500, window.innerWidth - e.clientX))
+    const deltaX = startMouseX - e.clientX
+    const maxRight = Math.max(200, window.innerWidth - 450)
+    editor.rightWidth = Math.max(180, Math.min(maxRight, startDimension + deltaX))
   } else if (activeResizer.value === 'bottom') {
-    const maxBottom = Math.max(200, window.innerHeight - 200)
-    editor.bottomHeight = Math.max(140, Math.min(maxBottom, window.innerHeight - e.clientY))
+    const deltaY = startMouseY - e.clientY
+    const totalH = workspaceRef.value?.clientHeight || (window.innerHeight - 44)
+    const minBottom = 64 // 最小高度 64px
+    const maxBottom = Math.max(minBottom, totalH - 44) // 最大高度可拖到顶上（保留顶部工具栏 44px）
+    editor.bottomHeight = Math.max(minBottom, Math.min(maxBottom, startDimension + deltaY))
+  } else if (activeResizer.value === 'drawer') {
+    const deltaX = startMouseX - e.clientX
+    const maxDrawer = Math.max(320, window.innerWidth - 650)
+    editor.presetDrawerWidth = Math.max(280, Math.min(maxDrawer, startDimension + deltaX))
   }
-
-  triggerCanvasResize()
 }
 
-function stopResize(e: PointerEvent) {
+function onWindowPointerUp() {
   if (activeResizer.value) {
-    const target = e.currentTarget as HTMLElement
-    try {
-      target.releasePointerCapture(e.pointerId)
-    } catch {}
     activeResizer.value = null
-    triggerCanvasResize()
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    window.removeEventListener('pointermove', onWindowPointerMove)
+    window.removeEventListener('pointerup', onWindowPointerUp)
+    window.removeEventListener('pointercancel', onWindowPointerUp)
+  }
+}
+
+function handleWindowResize() {
+  const totalH = workspaceRef.value?.clientHeight || (window.innerHeight - 44)
+  if (editor.bottomHeight > totalH - 44) {
+    editor.bottomHeight = Math.max(64, totalH - 44)
+  }
+  const maxLeft = Math.max(120, window.innerWidth - 300)
+  if (editor.leftWidth > maxLeft) {
+    editor.leftWidth = maxLeft
+  }
+  const maxRight = Math.max(140, window.innerWidth - 300)
+  if (editor.rightWidth > maxRight) {
+    editor.rightWidth = maxRight
+  }
+}
+
+function preventGlobalContextMenu(e: MouseEvent): boolean {
+  const target = e.target as HTMLElement | null
+  if (
+    target?.closest(
+      '[data-custom-context], [data-reka-context-menu-trigger], [data-radix-context-menu-trigger], .layer-row, .timeline-header-row'
+    )
+  ) {
+    return true
+  }
+  e.preventDefault()
+  e.stopPropagation()
+  return false
+}
+
+function handleAuxClick(e: MouseEvent) {
+  if (e.button === 2) {
+    preventGlobalContextMenu(e)
   }
 }
 
 function onKeydown(event: KeyboardEvent) {
+  const isInputFocused =
+    event.target instanceof HTMLInputElement ||
+    event.target instanceof HTMLTextAreaElement ||
+    (event.target as HTMLElement)?.isContentEditable
+
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
     event.preventDefault()
     if (event.shiftKey) {
@@ -60,49 +130,87 @@ function onKeydown(event: KeyboardEvent) {
       editor.undo()
     }
   }
-  if (event.code === 'Space' && (event.target === document.body || (event.target as HTMLElement)?.tagName === 'MAIN')) {
+  if (event.code === 'Space' && !isInputFocused) {
     event.preventDefault()
     editor.togglePlay()
   }
+  if (event.key.toLowerCase() === 'r' && !event.ctrlKey && !event.metaKey && !isInputFocused) {
+    event.preventDefault()
+    editor.randomizeJizura()
+  }
+
+  // 快捷键: Ctrl + = / Ctrl + - 放大缩小时间线
+  if ((event.ctrlKey || event.metaKey) && !isInputFocused) {
+    if (event.key === '=' || event.key === '+') {
+      event.preventDefault()
+      editor.zoom = Math.min(250, editor.zoom + 15)
+    } else if (event.key === '-') {
+      event.preventDefault()
+      editor.zoom = Math.max(30, editor.zoom - 15)
+    }
+  }
+
+  // 快捷键: 左右方向键微调播放进度 (按住 Shift 可按 0.5s 快进)
+  if (!isInputFocused && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    event.preventDefault()
+    const step = event.shiftKey ? 0.5 : 0.1
+    const nextTime = event.key === 'ArrowLeft'
+      ? Math.max(0, editor.currentTime - step)
+      : Math.min(editor.duration, editor.currentTime + step)
+    editor.setTime(Number(nextTime.toFixed(2)), true)
+  }
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('resize', handleWindowResize)
+  window.oncontextmenu = preventGlobalContextMenu
+  document.oncontextmenu = preventGlobalContextMenu
+  window.addEventListener('contextmenu', preventGlobalContextMenu, { capture: true })
+  document.addEventListener('contextmenu', preventGlobalContextMenu, { capture: true })
+  window.addEventListener('auxclick', handleAuxClick, { capture: true })
+})
+
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('resize', handleWindowResize)
+  window.oncontextmenu = null
+  document.oncontextmenu = null
+  window.removeEventListener('contextmenu', preventGlobalContextMenu, { capture: true })
+  document.removeEventListener('contextmenu', preventGlobalContextMenu, { capture: true })
+  window.removeEventListener('auxclick', handleAuxClick, { capture: true })
+  onWindowPointerUp()
 })
 </script>
 
 <template>
-  <main class="flex h-screen flex-col bg-[#090b0f] text-slate-200 select-none overflow-hidden relative">
+  <main class="flex h-screen flex-col bg-[#090b0f] text-slate-200 select-none overflow-hidden relative" @contextmenu.prevent>
     <EditorHeader />
 
     <section class="flex min-h-0 flex-1 relative">
       <!-- 左侧素材/图层面板 -->
-      <AssetPanel />
+      <AssetPanel v-if="!editor.isLeftPanelCollapsed" />
 
-      <!-- 左侧调整拖拽手柄 (应用 Pointer Capture 机制) -->
+      <!-- 左侧调整拖拽手柄 -->
       <div
-        class="resizer-v group relative z-30 w-1.5 cursor-col-resize bg-[#1c2330] hover:bg-violet-500 transition-colors"
+        v-if="!editor.isLeftPanelCollapsed"
+        class="resizer-v group relative z-30 w-1.5 cursor-col-resize bg-[#1c2330] hover:bg-violet-500 transition-colors shrink-0"
         title="按住拖拽调整左侧栏宽度"
         @pointerdown="startResize('left', $event)"
-        @pointermove="onResizerPointerMove"
-        @pointerup="stopResize"
       >
         <div class="absolute inset-y-0 -left-1 -right-1" />
       </div>
 
       <!-- 中间与底部工作区 -->
-      <section class="flex min-w-0 flex-1 flex-col">
+      <section ref="workspaceRef" class="flex min-w-0 flex-1 min-h-0 flex-col overflow-hidden">
         <!-- 预览画布区 -->
         <CanvasStage />
 
-        <!-- 底部时间线调整拖拽手柄 (应用 Pointer Capture 机制) -->
+        <!-- 底部时间线调整拖拽手柄 -->
         <div
-          class="resizer-h group relative z-30 h-1.5 cursor-row-resize bg-[#1c2330] hover:bg-violet-500 transition-colors"
+          class="resizer-h group relative z-30 h-1.5 cursor-row-resize bg-[#1c2330] hover:bg-violet-500 transition-colors shrink-0"
           title="按住拖拽调整时间线面板高度"
           @pointerdown="startResize('bottom', $event)"
-          @pointermove="onResizerPointerMove"
-          @pointerup="stopResize"
         >
           <div class="absolute inset-x-0 -top-1 -bottom-1" />
         </div>
@@ -111,32 +219,39 @@ onBeforeUnmount(() => {
         <TimelinePanel />
       </section>
 
-      <!-- 右侧调整拖拽手柄 (应用 Pointer Capture 机制) -->
+      <!-- 右侧调整拖拽手柄 -->
       <div
-        class="resizer-v group relative z-30 w-1.5 cursor-col-resize bg-[#1c2330] hover:bg-violet-500 transition-colors"
+        class="resizer-v group relative z-30 w-1.5 cursor-col-resize bg-[#1c2330] hover:bg-violet-500 transition-colors shrink-0"
         title="按住拖拽调整属性栏宽度"
         @pointerdown="startResize('right', $event)"
-        @pointermove="onResizerPointerMove"
-        @pointerup="stopResize"
       >
         <div class="absolute inset-y-0 -left-1 -right-1" />
       </div>
 
       <!-- 右侧属性检查器面板 -->
       <InspectorPanel />
-    </section>
 
-    <!-- 拖拽过程中覆盖遮罩，保证指针形状一致且不与画板文本框选粘连 -->
-    <div
-      v-if="activeResizer"
-      class="fixed inset-0 z-50 select-none"
-      :class="{
-        'cursor-col-resize': activeResizer === 'left' || activeResizer === 'right',
-        'cursor-row-resize': activeResizer === 'bottom'
-      }"
-    />
+      <!-- 预设抽屉拖拽调整手柄 -->
+      <div
+        v-if="editor.activePresetDrawerCategory"
+        class="resizer-v group relative z-30 w-1.5 cursor-col-resize bg-[#1c2330] hover:bg-violet-500 transition-colors shrink-0"
+        title="按住拖拽调整预设抽屉面板宽度"
+        @pointerdown="startResize('drawer', $event)"
+      >
+        <div class="absolute inset-y-0 -left-1 -right-1" />
+      </div>
+
+      <!-- 最右侧展开的当前预设类型视觉预览抽屉面板 (参考 JIZURA) -->
+      <PresetDrawerPanel v-if="editor.activePresetDrawerCategory" />
+    </section>
 
     <!-- 视频与工程导出弹窗 -->
     <ExportModal :open="editor.showExportModal" @close="editor.showExportModal = false" />
+
+    <!-- JIZURA 歌词智能生成弹窗 -->
+    <LyricImportModal />
+
+    <!-- JIZURA 全量表现与预设库浏览器 -->
+    <JizuraPresetExplorerModal />
   </main>
 </template>

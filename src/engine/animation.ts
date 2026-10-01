@@ -1,4 +1,5 @@
 import { evaluateEasing } from './easing'
+import { applyMgPreset } from './presets'
 import type { AnimatableProperty, ComputedTransform, Keyframe, Layer } from './types'
 
 export function interpolateProperty(
@@ -42,12 +43,17 @@ export function interpolateProperty(
 }
 
 export function computeLayerTransform(layer: Layer, globalTime: number): ComputedTransform {
+  const baseScaleX = layer.scaleX !== undefined ? layer.scaleX : layer.scale
+  const baseScaleY = layer.scaleY !== undefined ? layer.scaleY : layer.scale
+
   const isActive = globalTime >= layer.start && globalTime <= layer.start + layer.duration
   if (!isActive || !layer.visible) {
     return {
       x: layer.x,
       y: layer.y,
       scale: layer.scale,
+      scaleX: baseScaleX,
+      scaleY: baseScaleY,
       opacity: 0,
       rotation: layer.rotation,
       visible: false,
@@ -62,56 +68,56 @@ export function computeLayerTransform(layer: Layer, globalTime: number): Compute
   let x = interpolateProperty(layer.keyframes, 'x', layerTime, layer.x)
   let y = interpolateProperty(layer.keyframes, 'y', layerTime, layer.y)
   let scale = interpolateProperty(layer.keyframes, 'scale', layerTime, layer.scale)
+  let scaleX = interpolateProperty(layer.keyframes, 'scaleX', layerTime, baseScaleX)
+  let scaleY = interpolateProperty(layer.keyframes, 'scaleY', layerTime, baseScaleY)
   let opacity = interpolateProperty(layer.keyframes, 'opacity', layerTime, layer.opacity)
   let rotation = interpolateProperty(layer.keyframes, 'rotation', layerTime, layer.rotation)
   let textProgress = interpolateProperty(layer.keyframes, 'textProgress', layerTime, 100)
 
+  if (scale !== layer.scale) {
+    const scaleRatio = layer.scale ? scale / layer.scale : 1
+    scaleX *= scaleRatio
+    scaleY *= scaleRatio
+  }
+
   let displayedText = layer.text || ''
 
-  // 内置文字/MG动画预设的动态计算
-  if (layer.kind === 'text') {
-    const preset = layer.textPreset || 'none'
-    const fullText = layer.text || ''
+  // 通用 MG 动画预设计算 (支持文字、图片、色块图层)
+  const activePreset = layer.animPreset || layer.textPreset || 'none'
+  if (activePreset !== 'none') {
+    const presetRes = applyMgPreset(activePreset, {
+      layerTime,
+      layerDuration: layer.duration,
+      layer,
+      customParams: layer.animPresetParams,
+      baseTransform: {
+        x,
+        y,
+        scale,
+        scaleX,
+        scaleY,
+        opacity,
+        rotation,
+        displayedText,
+      },
+    })
 
-    if (preset === 'typewriter') {
-      const animDuration = Math.min(2.0, layer.duration * 0.6)
-      const ratio = Math.max(0, Math.min(1, layerTime / animDuration))
-      const charCount = Math.floor(ratio * fullText.length)
-      displayedText = fullText.slice(0, charCount)
-      if (layerTime < animDuration && Math.floor(layerTime * 4) % 2 === 0) {
-        displayedText += '▍' // 闪烁的光标
-      }
-    } else if (preset === 'fade-up') {
-      const animDuration = 0.6
-      if (layerTime < animDuration) {
-        const t = layerTime / animDuration
-        const eased = evaluateEasing('easeOut', t)
-        opacity = (layer.opacity * eased)
-        y += (1 - eased) * 40
-      }
-    } else if (preset === 'pop-in') {
-      const animDuration = 0.5
-      if (layerTime < animDuration) {
-        const t = layerTime / animDuration
-        const eased = evaluateEasing('backOut', t)
-        scale = layer.scale * eased
-        opacity = Math.min(layer.opacity, layer.opacity * (t * 2))
-      }
-    } else if (preset === 'blur-in') {
-      const animDuration = 0.7
-      if (layerTime < animDuration) {
-        const t = layerTime / animDuration
-        const eased = evaluateEasing('easeOut', t)
-        opacity = layer.opacity * eased
-        scale = layer.scale * (1.2 - 0.2 * eased)
-      }
-    }
+    if (presetRes.x !== undefined) x = presetRes.x
+    if (presetRes.y !== undefined) y = presetRes.y
+    if (presetRes.scale !== undefined) scale = presetRes.scale
+    if (presetRes.scaleX !== undefined) scaleX = presetRes.scaleX
+    if (presetRes.scaleY !== undefined) scaleY = presetRes.scaleY
+    if (presetRes.opacity !== undefined) opacity = presetRes.opacity
+    if (presetRes.rotation !== undefined) rotation = presetRes.rotation
+    if (presetRes.displayedText !== undefined) displayedText = presetRes.displayedText
   }
 
   return {
     x,
     y,
     scale,
+    scaleX,
+    scaleY,
     opacity,
     rotation,
     visible: opacity > 0.01,
